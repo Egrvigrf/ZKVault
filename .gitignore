@@ -1,0 +1,7 @@
+build/
+data/
+.zkv_master
+
+*.o
+*.obj
+*.out
