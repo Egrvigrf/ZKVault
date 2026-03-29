@@ -64,6 +64,15 @@ std::string ReadSecret(const std::string& prompt) {
     return secret;
 }
 
+std::string ReadLine(const std::string& prompt) {
+    std::cout << prompt;
+    std::cout.flush();
+
+    std::string value;
+    std::getline(std::cin, value);
+    return value;
+}
+
 std::vector<unsigned char> UnlockDataKey(const std::string& master_password) {
     const MasterKeyFile master_key_file = LoadMasterKeyFile();
 
@@ -128,9 +137,9 @@ PasswordEntry DecryptPasswordEntry(
 void PrintUsage() {
     std::cout << "Usage:\n";
     std::cout << "  zkvault init\n";
-    std::cout << "  zkvault add <name> <password> <note>\n";
+    std::cout << "  zkvault add <name>\n";
     std::cout << "  zkvault get <name>\n";
-    std::cout << "  zkvault update <name> <password> <note>\n";
+    std::cout << "  zkvault update <name>\n";
     std::cout << "  zkvault delete <name>\n";
     std::cout << "  zkvault list\n";
 }
@@ -177,7 +186,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (command == "add" || command == "update") {
-            if (argc != 5) {
+            if (argc != 3) {
                 PrintUsage();
                 return 1;
             }
@@ -186,13 +195,15 @@ int main(int argc, char* argv[]) {
             std::vector<unsigned char> dek = UnlockDataKey(master_password);
             PasswordEntry entry{
                 argv[2],
-                argv[3],
-                argv[4]
+                ReadSecret("Entry password: "),
+                ReadLine("Note: ")
             };
 
             const EncryptedEntryFile encrypted = EncryptPasswordEntry(entry, dek);
             SaveEncryptedEntryFile(entry.name, encrypted);
             CleanseString(master_password);
+            CleanseString(entry.password);
+            CleanseString(entry.note);
             CleanseBytes(dek);
             std::cout << (command == "add" ? "saved to " : "updated ")
                       << "data/" << entry.name << ".zkv\n";
@@ -208,11 +219,15 @@ int main(int argc, char* argv[]) {
             std::string master_password = ReadSecret("Master password: ");
             std::vector<unsigned char> dek = UnlockDataKey(master_password);
             const EncryptedEntryFile encrypted = LoadEncryptedEntryFile(argv[2]);
-            const PasswordEntry entry = DecryptPasswordEntry(encrypted, dek);
+            PasswordEntry entry = DecryptPasswordEntry(encrypted, dek);
             json serialized = entry;
+            std::string output = serialized.dump(2);
             CleanseString(master_password);
             CleanseBytes(dek);
-            std::cout << serialized.dump(2) << '\n';
+            std::cout << output << '\n';
+            CleanseString(entry.password);
+            CleanseString(entry.note);
+            CleanseString(output);
             return 0;
         }
 

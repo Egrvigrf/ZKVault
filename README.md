@@ -53,8 +53,10 @@ cmake --build build
 新增条目：
 
 ```bash
-./build/zkvault add <name> <password> <note>
+./build/zkvault add <name>
 ```
+
+程序会交互式提示输入主密码、条目密码和备注。
 
 读取条目：
 
@@ -65,8 +67,10 @@ cmake --build build
 更新条目：
 
 ```bash
-./build/zkvault update <name> <password> <note>
+./build/zkvault update <name>
 ```
+
+程序会交互式提示输入主密码、条目密码和备注。
 
 删除条目：
 
@@ -80,7 +84,7 @@ cmake --build build
 ./build/zkvault list
 ```
 
-除 `delete` 和 `list` 外，命令都会交互式提示输入主密码。
+除 `delete` 和 `list` 外，命令都会交互式提示输入主密码；`add` 和 `update` 还会继续交互式输入条目密码和备注，避免敏感内容出现在 shell 历史或进程参数里。
 
 ## 存储格式
 
