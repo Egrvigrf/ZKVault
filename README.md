@@ -48,7 +48,15 @@ cmake --build build
 ./build/zkvault init
 ```
 
-程序会交互式提示输入主密码，并生成 `.zkv_master`。
+程序会交互式提示输入两次主密码；两次一致后才会生成 `.zkv_master`。
+
+更换主密码：
+
+```bash
+./build/zkvault change-master-password
+```
+
+程序会交互式提示输入当前主密码，并要求输入两次新主密码，然后使用新密码重新包裹 DEK 并覆盖 `.zkv_master`。
 
 新增条目：
 

@@ -8,13 +8,7 @@ namespace {
 
 const std::filesystem::path kMasterKeyPath = ".zkv_master";
 
-}  // namespace
-
-void SaveMasterKeyFile(const MasterKeyFile& file) {
-    if (std::filesystem::exists(kMasterKeyPath)) {
-        throw std::runtime_error(".zkv_master already exists");
-    }
-
+void WriteMasterKeyFile(const MasterKeyFile& file) {
     std::ofstream output(kMasterKeyPath);
     if (!output) {
         throw std::runtime_error("failed to open .zkv_master");
@@ -22,6 +16,20 @@ void SaveMasterKeyFile(const MasterKeyFile& file) {
 
     json serialized = file;
     output << serialized.dump(2);
+}
+
+}  // namespace
+
+void SaveMasterKeyFile(const MasterKeyFile& file) {
+    if (std::filesystem::exists(kMasterKeyPath)) {
+        throw std::runtime_error(".zkv_master already exists");
+    }
+
+    WriteMasterKeyFile(file);
+}
+
+void OverwriteMasterKeyFile(const MasterKeyFile& file) {
+    WriteMasterKeyFile(file);
 }
 
 MasterKeyFile LoadMasterKeyFile() {

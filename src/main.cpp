@@ -73,6 +73,23 @@ std::string ReadLine(const std::string& prompt) {
     return value;
 }
 
+std::string ReadConfirmedSecret(
+    const std::string& prompt,
+    const std::string& confirm_prompt,
+    const std::string& mismatch_error) {
+    std::string secret = ReadSecret(prompt);
+    std::string confirm_secret = ReadSecret(confirm_prompt);
+
+    if (secret != confirm_secret) {
+        CleanseString(secret);
+        CleanseString(confirm_secret);
+        throw std::runtime_error(mismatch_error);
+    }
+
+    CleanseString(confirm_secret);
+    return secret;
+}
+
 std::vector<unsigned char> UnlockDataKey(const std::string& master_password) {
     const MasterKeyFile master_key_file = LoadMasterKeyFile();
 
@@ -95,6 +112,27 @@ std::vector<unsigned char> UnlockDataKey(const std::string& master_password) {
     CleanseBytes(auth_tag);
 
     return dek;
+}
+
+MasterKeyFile CreateMasterKeyFile(
+    const std::string& master_password,
+    const std::vector<unsigned char>& dek) {
+    std::vector<unsigned char> salt = GenerateRandomBytes(16);
+    std::vector<unsigned char> kek = DeriveKeyScrypt(master_password, salt, 32);
+    const AeadCiphertext wrapped_dek = EncryptAes256Gcm(kek, dek);
+
+    MasterKeyFile master_key_file{
+        1,
+        "scrypt",
+        BytesToHex(salt),
+        BytesToHex(wrapped_dek.iv),
+        BytesToHex(wrapped_dek.ciphertext),
+        BytesToHex(wrapped_dek.auth_tag)
+    };
+
+    CleanseBytes(kek);
+    CleanseBytes(salt);
+    return master_key_file;
 }
 
 EncryptedEntryFile EncryptPasswordEntry(
@@ -137,6 +175,7 @@ PasswordEntry DecryptPasswordEntry(
 void PrintUsage() {
     std::cout << "Usage:\n";
     std::cout << "  zkvault init\n";
+    std::cout << "  zkvault change-master-password\n";
     std::cout << "  zkvault add <name>\n";
     std::cout << "  zkvault get <name>\n";
     std::cout << "  zkvault update <name>\n";
@@ -161,27 +200,42 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
 
-            std::string master_password = ReadSecret("Master password: ");
-            std::vector<unsigned char> salt = GenerateRandomBytes(16);
-            std::vector<unsigned char> kek = DeriveKeyScrypt(master_password, salt, 32);
+            std::string master_password = ReadConfirmedSecret(
+                "Master password: ",
+                "Confirm master password: ",
+                "master passwords do not match");
             std::vector<unsigned char> dek = GenerateRandomBytes(32);
-            const AeadCiphertext wrapped_dek = EncryptAes256Gcm(kek, dek);
-
-            MasterKeyFile master_key_file{
-                1,
-                "scrypt",
-                BytesToHex(salt),
-                BytesToHex(wrapped_dek.iv),
-                BytesToHex(wrapped_dek.ciphertext),
-                BytesToHex(wrapped_dek.auth_tag)
-            };
+            const MasterKeyFile master_key_file =
+                CreateMasterKeyFile(master_password, dek);
 
             SaveMasterKeyFile(master_key_file);
             CleanseString(master_password);
-            CleanseBytes(kek);
             CleanseBytes(dek);
-            CleanseBytes(salt);
             std::cout << "initialized .zkv_master\n";
+            return 0;
+        }
+
+        if (command == "change-master-password") {
+            if (argc != 2) {
+                PrintUsage();
+                return 1;
+            }
+
+            std::string current_master_password =
+                ReadSecret("Current master password: ");
+            std::vector<unsigned char> dek = UnlockDataKey(current_master_password);
+            std::string new_master_password = ReadConfirmedSecret(
+                "New master password: ",
+                "Confirm new master password: ",
+                "new master passwords do not match");
+
+            const MasterKeyFile master_key_file =
+                CreateMasterKeyFile(new_master_password, dek);
+            OverwriteMasterKeyFile(master_key_file);
+            CleanseString(current_master_password);
+            CleanseString(new_master_password);
+            CleanseBytes(dek);
+            std::cout << "updated .zkv_master\n";
             return 0;
         }
 
