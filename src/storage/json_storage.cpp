@@ -1,13 +1,35 @@
 #include "storage/json_storage.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <algorithm>
+#include <string_view>
 #include <stdexcept>
 
 namespace {
 
+void ValidateEntryName(std::string_view name) {
+    if (name.empty()) {
+        throw std::runtime_error("entry name must not be empty");
+    }
+
+    if (name == "." || name == "..") {
+        throw std::runtime_error("entry name must not be '.' or '..'");
+    }
+
+    for (const unsigned char ch : name) {
+        if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.') {
+            continue;
+        }
+
+        throw std::runtime_error(
+            "entry name may only contain letters, digits, '.', '-' and '_'");
+    }
+}
+
 std::filesystem::path EntryPath(const std::string& name) {
+    ValidateEntryName(name);
     return std::filesystem::path("data") / (name + ".zkv");
 }
 
