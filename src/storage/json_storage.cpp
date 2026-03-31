@@ -59,6 +59,10 @@ EncryptedEntryFile LoadEncryptedEntryFile(const std::string& name) {
     return serialized.get<EncryptedEntryFile>();
 }
 
+bool PasswordEntryExists(const std::string& name) {
+    return std::filesystem::exists(EntryPath(name));
+}
+
 void DeletePasswordEntry(const std::string& name) {
     const std::filesystem::path path = EntryPath(name);
     if (!std::filesystem::exists(path)) {

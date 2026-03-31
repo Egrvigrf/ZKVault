@@ -1,4 +1,8 @@
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <termios.h>
@@ -29,6 +33,16 @@ void CleanseBytes(std::vector<unsigned char>& value) {
     if (!value.empty()) {
         OPENSSL_cleanse(value.data(), value.size());
     }
+}
+
+std::string NowIso8601() {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_utc{};
+    gmtime_r(&t, &tm_utc);
+    std::ostringstream oss;
+    oss << std::put_time(&tm_utc, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
 }
 
 std::string ReadSecret(const std::string& prompt) {
@@ -247,10 +261,26 @@ int main(int argc, char* argv[]) {
 
             std::string master_password = ReadSecret("Master password: ");
             std::vector<unsigned char> dek = UnlockDataKey(master_password);
+
+            std::string now = NowIso8601();
+            std::string created_at = now;
+
+            if (command == "update" && PasswordEntryExists(argv[2])) {
+                PasswordEntry old_entry =
+                    DecryptPasswordEntry(LoadEncryptedEntryFile(argv[2]), dek);
+                if (!old_entry.created_at.empty()) {
+                    created_at = old_entry.created_at;
+                }
+                CleanseString(old_entry.password);
+                CleanseString(old_entry.note);
+            }
+
             PasswordEntry entry{
                 argv[2],
                 ReadSecret("Entry password: "),
-                ReadLine("Note: ")
+                ReadLine("Note: "),
+                created_at,
+                now
             };
 
             const EncryptedEntryFile encrypted = EncryptPasswordEntry(entry, dek);

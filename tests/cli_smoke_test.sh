@@ -78,13 +78,27 @@ GET_OUTPUT="$(run_ok $'test-master-password\n' get email)"
 assert_contains "$GET_OUTPUT" '"name": "email"'
 assert_contains "$GET_OUTPUT" '"password": "entry-password"'
 assert_contains "$GET_OUTPUT" '"note": "initial note"'
+assert_contains "$GET_OUTPUT" '"created_at": "'
+assert_contains "$GET_OUTPUT" '"updated_at": "'
 
+INITIAL_CREATED_AT="$(printf '%s\n' "$GET_OUTPUT" | sed -n 's/.*"created_at": "\(.*\)",/\1/p')"
+INITIAL_UPDATED_AT="$(printf '%s\n' "$GET_OUTPUT" | sed -n 's/.*"updated_at": "\(.*\)"/\1/p')"
+[[ -n "$INITIAL_CREATED_AT" ]]
+[[ -n "$INITIAL_UPDATED_AT" ]]
+[[ "$INITIAL_CREATED_AT" == "$INITIAL_UPDATED_AT" ]]
+
+sleep 1
 UPDATE_OUTPUT="$(run_ok $'test-master-password\nnew-entry-password\nupdated note\n' update email)"
 assert_contains "$UPDATE_OUTPUT" "updated data/email.zkv"
 
 UPDATED_GET_OUTPUT="$(run_ok $'test-master-password\n' get email)"
 assert_contains "$UPDATED_GET_OUTPUT" '"password": "new-entry-password"'
 assert_contains "$UPDATED_GET_OUTPUT" '"note": "updated note"'
+assert_contains "$UPDATED_GET_OUTPUT" "\"created_at\": \"$INITIAL_CREATED_AT\""
+
+UPDATED_UPDATED_AT="$(printf '%s\n' "$UPDATED_GET_OUTPUT" | sed -n 's/.*"updated_at": "\(.*\)"/\1/p')"
+[[ -n "$UPDATED_UPDATED_AT" ]]
+[[ "$UPDATED_UPDATED_AT" != "$INITIAL_UPDATED_AT" ]]
 
 CHANGE_MASTER_OUTPUT="$(run_ok $'test-master-password\nnew-master-password\nnew-master-password\n' change-master-password)"
 assert_contains "$CHANGE_MASTER_OUTPUT" "updated .zkv_master"
