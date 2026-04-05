@@ -1,4 +1,5 @@
 #include "crypto/kdf.hpp"
+#include "crypto/secure_memory.hpp"
 
 #include <openssl/evp.h>
 
@@ -11,6 +12,7 @@ std::vector<unsigned char> DeriveKeyScrypt(
     constexpr std::size_t kScryptMaxMem = 64 * 1024 * 1024;
 
     std::vector<unsigned char> key(key_size);
+    auto key_guard = MakeScopedCleanse(key);
 
     if (EVP_PBE_scrypt(password.c_str(),
                        password.size(),
@@ -25,5 +27,6 @@ std::vector<unsigned char> DeriveKeyScrypt(
         throw std::runtime_error("EVP_PBE_scrypt failed");
     }
 
+    key_guard.Release();
     return key;
 }

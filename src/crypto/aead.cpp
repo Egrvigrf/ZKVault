@@ -1,6 +1,7 @@
 #include "crypto/aead.hpp"
 
 #include "crypto/random.hpp"
+#include "crypto/secure_memory.hpp"
 
 #include <openssl/evp.h>
 
@@ -22,6 +23,7 @@ AeadCiphertext EncryptAes256Gcm(
     }
 
     AeadCiphertext result;
+    auto result_guard = MakeScopedCleanse(result);
     result.iv = GenerateRandomBytes(kGcmIvSize);
     result.ciphertext.resize(plaintext.size());
     result.auth_tag.resize(kGcmTagSize);
@@ -56,6 +58,7 @@ AeadCiphertext EncryptAes256Gcm(
     }
 
     result.ciphertext.resize(out_len + final_len);
+    result_guard.Release();
     return result;
 }
 
@@ -75,6 +78,7 @@ std::vector<unsigned char> DecryptAes256Gcm(
     }
 
     std::vector<unsigned char> plaintext(ciphertext.size());
+    auto plaintext_guard = MakeScopedCleanse(plaintext);
 
     EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
     if (ctx == nullptr) {
@@ -106,5 +110,6 @@ std::vector<unsigned char> DecryptAes256Gcm(
     }
 
     plaintext.resize(out_len + final_len);
+    plaintext_guard.Release();
     return plaintext;
 }

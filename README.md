@@ -48,6 +48,7 @@ ZKVault 的目标不是提供一组分散的命令行脚本，而是形成一套
 
 ```text
 zkvault init
+zkvault shell
 zkvault change-master-password
 zkvault add <name>
 zkvault get <name>
@@ -59,6 +60,7 @@ zkvault list
 接口说明：
 
 - `init`：初始化保险库并生成 `.zkv_master`
+- `shell`：启动一次解锁、多步操作的会话式终端前端原型
 - `change-master-password`：更新主密码并重新包裹 DEK
 - `add <name>`：创建条目
 - `get <name>`：读取条目
@@ -69,6 +71,9 @@ zkvault list
 接口约束：
 
 - 主密码通过终端交互输入，不经命令行参数传递
+- 交互式密码输入在终端中显示 `*` 掩码，并支持退格删除
+- 可见交互输入（如 `shell` 命令行、确认提示、备注输入）同样支持退格/删除，不会回显 `^H` 或 `^?`
+- `shell` 在会话开始时完成一次解锁，随后可连续执行多步操作
 - `add` 与 `update` 在执行过程中继续交互式采集条目内容
 - `add` 仅允许创建新条目；若条目已存在则直接失败
 - `update` 仅允许更新已存在条目；若条目不存在则直接失败
@@ -89,6 +94,23 @@ zkvault list
 - 轮换主密码：输入 `CHANGE`，确认本次主密码变更动作
 
 若确认值不匹配，命令会立即失败，不会继续执行后续写入。
+
+### 会话式终端前端原型
+
+当前仓库已提供 `zkvault shell`，用于验证未来 TUI 所需的“单次解锁、连续操作”交互模型。该模式不依赖额外 UI 库，先以会话式 shell 形式落地以下能力：
+
+- 首次启动时可直接初始化保险库
+- 解锁一次后连续执行 `list`、`show`、`add`、`update`、`delete`
+- 在同一会话内完成主密码轮换
+- 保持与单命令 CLI 一致的高风险确认语义
+
+这不是最终的全屏 TUI，但已经把未来界面层最关键的会话边界和状态持有方式跑通了。
+
+需要特别说明：
+
+- 直接运行 `./build/zkvault` 时，默认仍然是命令式 CLI 入口，不会自动进入 `shell`
+- 只有显式执行 `./build/zkvault shell` 时，才会进入当前的会话式终端前端原型
+- `shell` 提示符、确认输入和备注输入已统一走终端输入层处理，退格时不会再在屏幕上回显 `^H`
 
 ## 目标交互范围
 
@@ -121,10 +143,13 @@ zkvault list
 
 ```text
 src/
+├── app/      # 保险库动作与前端接入边界
 ├── crypto/   # 随机数、KDF、AES-GCM、hex 编解码
 ├── model/    # PasswordEntry、MasterKeyFile、EncryptedEntryFile
+├── shell/    # 会话式终端前端原型
 ├── storage/  # .zkv_master 和条目文件读写
-└── main.cpp  # 终端接入层入口
+├── terminal/ # 终端输入与安全提示
+└── main.cpp  # CLI 入口与命令分发
 ```
 
 ## 构建与运行
@@ -154,6 +179,20 @@ cmake --build build
 ./build/zkvault get <name>
 ```
 
+启动会话式终端前端原型：
+
+```bash
+./build/zkvault shell
+```
+
+若直接执行：
+
+```bash
+./build/zkvault
+```
+
+当前行为仍然是输出命令用法并等待子命令，而不是自动进入会话模式。
+
 ## 测试
 
 查看测试：
@@ -174,7 +213,15 @@ ctest --test-dir build
 ctest --test-dir build --output-on-failure
 ```
 
-当前仓库包含一条 CLI 冒烟测试 `zkvault_cli_smoke`，用于验证终端接入层是否能够正确驱动保险库核心，覆盖以下流程：
+当前仓库包含以下 CLI 测试，用于验证终端接入层是否能够正确驱动保险库核心并稳定处理异常路径：
+
+- `zkvault_cli_smoke`
+- `zkvault_cli_error_paths`
+- `zkvault_shell_smoke`
+- `zkvault_app_contract`
+- `zkvault_prompt_backspace`
+
+其中 `zkvault_cli_smoke` 覆盖以下流程：
 
 - `init`
 - `add`
@@ -188,6 +235,39 @@ ctest --test-dir build --output-on-failure
 - 非法条目名拒绝
 - `delete`
 - `delete` 删除确认
+
+`zkvault_cli_error_paths` 额外覆盖以下负面场景：
+
+- 重复初始化拒绝
+- `get`/`delete` 不存在条目拒绝
+- `.zkv_master` 非法 JSON
+- `.zkv_master` 不支持的 `version`
+- `.zkv_master` 不支持的 `kdf`
+- 加密条目文件非法 JSON
+- 加密条目文件不支持的 `version`
+
+`zkvault_shell_smoke` 覆盖以下会话式终端前端流程：
+
+- 在空目录中直接初始化保险库
+- 一次解锁后连续执行新增、读取、更新、删除
+- 会话内主密码轮换
+- 轮换后旧密码失效、新密码可继续进入会话
+
+`zkvault_app_contract` 直接调用 `src/app/` 暴露的接入边界，不经过 CLI 提示词解析，覆盖以下契约：
+
+- 保险库初始化与重复初始化拒绝
+- 条目创建、读取、更新、删除
+- 条目列表排序
+- `created_at` / `updated_at` 语义
+- 主密码轮换后旧密码失效、新密码可解锁
+- 重名创建、缺失条目更新、非法条目名等应用层错误
+
+`zkvault_prompt_backspace` 使用 pseudo-terminal 验证终端输入行为，覆盖以下场景：
+
+- 密码输入下 `Backspace` 不会回显为 `^H`
+- 密码输入下 `Delete` 不会回显为 `^?`
+- 密码输入下删除键会正确移除前一个密码字符
+- 可见输入下 `Backspace` / `Delete` 同样不会回显控制字符
 
 也可直接执行：
 

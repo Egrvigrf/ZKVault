@@ -36,7 +36,17 @@ MasterKeyFile LoadMasterKeyFile() {
     }
 
     json serialized;
-    input >> serialized;
+    try {
+        input >> serialized;
+    } catch (const json::exception&) {
+        throw std::runtime_error("invalid .zkv_master JSON");
+    }
 
-    return serialized.get<MasterKeyFile>();
+    try {
+        MasterKeyFile file = serialized.get<MasterKeyFile>();
+        ValidateMasterKeyFile(file);
+        return file;
+    } catch (const json::exception&) {
+        throw std::runtime_error("invalid .zkv_master schema");
+    }
 }

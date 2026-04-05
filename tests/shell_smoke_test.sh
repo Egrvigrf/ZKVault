@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+    echo "usage: $0 <zkvault-binary>" >&2
+    exit 1
+fi
+
+BIN="$1"
+TMPDIR="$(mktemp -d /tmp/zkvault-shell-ctest-XXXXXX)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+assert_contains() {
+    local haystack="$1"
+    local needle="$2"
+
+    if [[ "$haystack" != *"$needle"* ]]; then
+        echo "expected output to contain: $needle" >&2
+        echo "actual output:" >&2
+        printf '%s\n' "$haystack" >&2
+        exit 1
+    fi
+}
+
+run_ok() {
+    local input="$1"
+    shift
+
+    local output
+    output="$(cd "$TMPDIR" && printf '%s' "$input" | "$BIN" "$@" 2>&1)"
+    printf '%s' "$output"
+}
+
+run_fail() {
+    local input="$1"
+    shift
+
+    local output
+    set +e
+    output="$(cd "$TMPDIR" && printf '%s' "$input" | "$BIN" "$@" 2>&1)"
+    local status=$?
+    set -e
+
+    if [[ $status -eq 0 ]]; then
+        echo "expected command to fail: $*" >&2
+        printf '%s\n' "$output" >&2
+        exit 1
+    fi
+
+    printf '%s' "$output"
+}
+
+SHELL_INIT_OUTPUT="$(run_ok $'y\ntest-master-password\ntest-master-password\nlist\nquit\n' shell)"
+assert_contains "$SHELL_INIT_OUTPUT" "initialized .zkv_master"
+assert_contains "$SHELL_INIT_OUTPUT" "shell ready; type help for commands"
+assert_contains "$SHELL_INIT_OUTPUT" "(empty)"
+
+SHELL_WORKFLOW_OUTPUT="$(run_ok $'test-master-password\nadd email\nentry-password\ninitial note\nlist\nshow email\nupdate email\nemail\nnew-entry-password\nupdated note\nshow email\nchange-master-password\nCHANGE\nnew-master-password\nnew-master-password\ndelete email\nemail\nlist\nquit\n' shell)"
+assert_contains "$SHELL_WORKFLOW_OUTPUT" "saved to data/email.zkv"
+assert_contains "$SHELL_WORKFLOW_OUTPUT" '"password": "entry-password"'
+assert_contains "$SHELL_WORKFLOW_OUTPUT" "updated data/email.zkv"
+assert_contains "$SHELL_WORKFLOW_OUTPUT" '"password": "new-entry-password"'
+assert_contains "$SHELL_WORKFLOW_OUTPUT" "updated .zkv_master"
+assert_contains "$SHELL_WORKFLOW_OUTPUT" "deleted data/email.zkv"
+assert_contains "$SHELL_WORKFLOW_OUTPUT" "(empty)"
+
+OLD_PASSWORD_OUTPUT="$(run_fail $'test-master-password\n' shell)"
+assert_contains "$OLD_PASSWORD_OUTPUT" "error: AES-256-GCM decryption failed"
+
+NEW_PASSWORD_OUTPUT="$(run_ok $'new-master-password\nhelp\nquit\n' shell)"
+assert_contains "$NEW_PASSWORD_OUTPUT" "shell ready; type help for commands"
+assert_contains "$NEW_PASSWORD_OUTPUT" "Commands:"

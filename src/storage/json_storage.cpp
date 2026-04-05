@@ -49,9 +49,19 @@ EncryptedEntryFile LoadEncryptedEntryFile(const std::string& name) {
     }
 
     json serialized;
-    input >> serialized;
+    try {
+        input >> serialized;
+    } catch (const json::exception&) {
+        throw std::runtime_error("invalid encrypted entry JSON");
+    }
 
-    return serialized.get<EncryptedEntryFile>();
+    try {
+        EncryptedEntryFile file = serialized.get<EncryptedEntryFile>();
+        ValidateEncryptedEntryFile(file);
+        return file;
+    } catch (const json::exception&) {
+        throw std::runtime_error("invalid encrypted entry schema");
+    }
 }
 
 bool PasswordEntryExists(const std::string& name) {

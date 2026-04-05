@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -27,4 +28,18 @@ inline void from_json(const json& j, EncryptedEntryFile& file) {
     j.at("data_iv").get_to(file.data_iv);
     j.at("ciphertext").get_to(file.ciphertext);
     j.at("auth_tag").get_to(file.auth_tag);
+}
+
+inline void ValidateEncryptedEntryFile(const EncryptedEntryFile& file) {
+    if (file.version != 1) {
+        throw std::runtime_error("unsupported encrypted entry version");
+    }
+
+    if (file.data_iv.empty()) {
+        throw std::runtime_error("encrypted entry data_iv must not be empty");
+    }
+
+    if (file.auth_tag.empty()) {
+        throw std::runtime_error("encrypted entry auth_tag must not be empty");
+    }
 }

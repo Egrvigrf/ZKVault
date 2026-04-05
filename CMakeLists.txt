@@ -9,8 +9,10 @@ include(CTest)
 
 find_package(OpenSSL REQUIRED)
 
-add_executable(zkvault
-    src/main.cpp
+add_library(zkvault_core
+    src/app/vault_app.cpp
+    src/app/vault_codec.cpp
+    src/app/vault_session.cpp
     src/crypto/aead.cpp
     src/crypto/hex.cpp
     src/crypto/kdf.cpp
@@ -20,16 +22,52 @@ add_executable(zkvault
     src/storage/atomic_file.cpp
 )
 
-target_include_directories(zkvault PRIVATE
+target_include_directories(zkvault_core PUBLIC
     src
     external
 )
 
-target_link_libraries(zkvault PRIVATE OpenSSL::Crypto)
+target_link_libraries(zkvault_core PUBLIC OpenSSL::Crypto)
+
+add_executable(zkvault
+    src/main.cpp
+    src/shell/interactive_shell.cpp
+    src/terminal/prompt.cpp
+)
+
+target_link_libraries(zkvault PRIVATE zkvault_core)
 
 if(BUILD_TESTING)
+    add_executable(zkvault_app_contract
+        tests/app_contract_test.cpp
+    )
+
+    add_executable(zkvault_prompt_backspace
+        tests/prompt_backspace_test.cpp
+        src/terminal/prompt.cpp
+    )
+
+    target_link_libraries(zkvault_app_contract PRIVATE zkvault_core)
+    target_link_libraries(zkvault_prompt_backspace PRIVATE zkvault_core util)
+
     add_test(
         NAME zkvault_cli_smoke
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke_test.sh $<TARGET_FILE:zkvault>
+    )
+    add_test(
+        NAME zkvault_cli_error_paths
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_error_paths_test.sh $<TARGET_FILE:zkvault>
+    )
+    add_test(
+        NAME zkvault_shell_smoke
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/shell_smoke_test.sh $<TARGET_FILE:zkvault>
+    )
+    add_test(
+        NAME zkvault_app_contract
+        COMMAND $<TARGET_FILE:zkvault_app_contract>
+    )
+    add_test(
+        NAME zkvault_prompt_backspace
+        COMMAND $<TARGET_FILE:zkvault_prompt_backspace>
     )
 endif()
