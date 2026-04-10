@@ -11,6 +11,8 @@ enum class FrontendCommandKind {
     kHelp,
     kList,
     kFind,
+    kNext,
+    kPrev,
     kShow,
     kAdd,
     kUpdate,
@@ -47,7 +49,8 @@ enum class FrontendPayloadKind {
     kNone,
     kText,
     kEntry,
-    kEntryNames
+    kEntryNames,
+    kFocusedList
 };
 
 enum class FrontendErrorKind {
@@ -56,6 +59,7 @@ enum class FrontendErrorKind {
     kConflict,
     kNotFound,
     kLocked,
+    kSelection,
     kValidation,
     kConfirmationRejected,
     kInputCancelled,
@@ -75,6 +79,12 @@ struct FrontendError {
     std::string message;
 };
 
+struct FrontendFocusedList {
+    std::string filter_term;
+    std::string selected_name;
+    std::vector<std::string> entry_names;
+};
+
 struct FrontendActionResult {
     FrontendSessionState state;
     FrontendPayloadKind payload_kind;
@@ -82,12 +92,19 @@ struct FrontendActionResult {
     std::string empty_message;
     PasswordEntry entry;
     std::vector<std::string> entry_names;
+    FrontendFocusedList focused_list;
 };
 
 inline void Cleanse(std::vector<std::string>& values) {
     for (std::string& value : values) {
         Cleanse(value);
     }
+}
+
+inline void Cleanse(FrontendFocusedList& focused_list) {
+    Cleanse(focused_list.filter_term);
+    Cleanse(focused_list.selected_name);
+    Cleanse(focused_list.entry_names);
 }
 
 inline void Cleanse(FrontendError& error) {
@@ -99,6 +116,7 @@ inline void Cleanse(FrontendActionResult& result) {
     Cleanse(result.empty_message);
     Cleanse(result.entry);
     Cleanse(result.entry_names);
+    Cleanse(result.focused_list);
 }
 
 const std::vector<std::string>& CliUsageCommands();
@@ -133,6 +151,12 @@ FrontendActionResult BuildUnlockedResult();
 
 FrontendActionResult BuildListResult(
     std::vector<std::string> entry_names,
+    const std::string& empty_message);
+
+FrontendActionResult BuildFocusedListResult(
+    std::vector<std::string> entry_names,
+    const std::string& selected_name,
+    const std::string& filter_term,
     const std::string& empty_message);
 
 FrontendActionResult BuildShowEntryResult(PasswordEntry entry);

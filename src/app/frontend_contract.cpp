@@ -27,6 +27,16 @@ void RequireArgumentCount(
     }
 }
 
+void RequireArgumentRange(
+    const std::vector<std::string>& parts,
+    std::size_t minimum,
+    std::size_t maximum,
+    const std::string& usage) {
+    if (parts.size() < minimum || parts.size() > maximum) {
+        throw std::runtime_error("usage: " + usage);
+    }
+}
+
 bool StartsWith(std::string_view value, std::string_view prefix) {
     return value.substr(0, prefix.size()) == prefix;
 }
@@ -55,6 +65,27 @@ std::string FormatCommandBlock(
     return output.str();
 }
 
+std::string RenderFocusedList(
+    const FrontendFocusedList& focused_list,
+    std::string_view empty_message) {
+    if (focused_list.entry_names.empty()) {
+        return std::string(empty_message);
+    }
+
+    std::ostringstream output;
+    for (std::size_t i = 0; i < focused_list.entry_names.size(); ++i) {
+        if (i > 0) {
+            output << '\n';
+        }
+
+        const std::string& entry_name = focused_list.entry_names[i];
+        const bool is_selected = entry_name == focused_list.selected_name;
+        output << (is_selected ? "> " : "  ") << entry_name;
+    }
+
+    return output.str();
+}
+
 }  // namespace
 
 const std::vector<std::string>& CliUsageCommands() {
@@ -77,7 +108,9 @@ const std::vector<std::string>& ShellHelpCommands() {
         "help",
         "list",
         "find <term>",
-        "show <name>",
+        "next",
+        "prev",
+        "show [name]",
         "add <name>",
         "update <name>",
         "delete <name>",
@@ -113,9 +146,20 @@ FrontendCommand ParseShellCommand(const std::string& line) {
         return FrontendCommand{FrontendCommandKind::kFind, parts[1]};
     }
 
+    if (command == "next") {
+        RequireArgumentCount(parts, 1, "next");
+        return FrontendCommand{FrontendCommandKind::kNext, ""};
+    }
+
+    if (command == "prev") {
+        RequireArgumentCount(parts, 1, "prev");
+        return FrontendCommand{FrontendCommandKind::kPrev, ""};
+    }
+
     if (command == "show") {
-        RequireArgumentCount(parts, 2, "show <name>");
-        return FrontendCommand{FrontendCommandKind::kShow, parts[1]};
+        RequireArgumentRange(parts, 1, 2, "show [name]");
+        const std::string name = parts.size() == 2 ? parts[1] : "";
+        return FrontendCommand{FrontendCommandKind::kShow, name};
     }
 
     if (command == "add") {
@@ -205,6 +249,14 @@ FrontendSessionState ResolveCommandInputState(FrontendCommandKind kind) {
         return FrontendSessionState::kShowingList;
     }
 
+    if (kind == FrontendCommandKind::kNext) {
+        return FrontendSessionState::kShowingList;
+    }
+
+    if (kind == FrontendCommandKind::kPrev) {
+        return FrontendSessionState::kShowingList;
+    }
+
     if (kind == FrontendCommandKind::kShow) {
         return FrontendSessionState::kShowingEntry;
     }
@@ -263,6 +315,7 @@ FrontendActionResult BuildCliUsageResult() {
         FormatCommandBlock("Usage:", CliUsageCommands()),
         "",
         {},
+        {},
         {}
     };
 }
@@ -273,6 +326,7 @@ FrontendActionResult BuildShellReadyResult() {
         FrontendPayloadKind::kText,
         "shell ready; type help for commands",
         "",
+        {},
         {},
         {}
     };
@@ -285,6 +339,7 @@ FrontendActionResult BuildShellHelpResult() {
         FormatCommandBlock("Commands:", ShellHelpCommands()),
         "",
         {},
+        {},
         {}
     };
 }
@@ -296,6 +351,7 @@ FrontendActionResult BuildLockedResult() {
         "vault locked",
         "",
         {},
+        {},
         {}
     };
 }
@@ -306,6 +362,7 @@ FrontendActionResult BuildUnlockedResult() {
         FrontendPayloadKind::kText,
         "vault unlocked",
         "",
+        {},
         {},
         {}
     };
@@ -320,7 +377,28 @@ FrontendActionResult BuildListResult(
         "",
         empty_message,
         {},
-        std::move(entry_names)
+        std::move(entry_names),
+        {}
+    };
+}
+
+FrontendActionResult BuildFocusedListResult(
+    std::vector<std::string> entry_names,
+    const std::string& selected_name,
+    const std::string& filter_term,
+    const std::string& empty_message) {
+    return FrontendActionResult{
+        FrontendSessionState::kShowingList,
+        FrontendPayloadKind::kFocusedList,
+        "",
+        empty_message,
+        {},
+        {},
+        FrontendFocusedList{
+            filter_term,
+            selected_name,
+            std::move(entry_names)
+        }
     };
 }
 
@@ -331,6 +409,7 @@ FrontendActionResult BuildShowEntryResult(PasswordEntry entry) {
         "",
         "",
         std::move(entry),
+        {},
         {}
     };
 }
@@ -341,6 +420,7 @@ FrontendActionResult BuildInitializedResult(const std::string& master_key_path) 
         FrontendPayloadKind::kText,
         "initialized " + master_key_path,
         "",
+        {},
         {},
         {}
     };
@@ -353,6 +433,7 @@ FrontendActionResult BuildStoredEntryResult(const std::string& entry_path) {
         FormatStoredEntryMessage(entry_path),
         "",
         {},
+        {},
         {}
     };
 }
@@ -363,6 +444,7 @@ FrontendActionResult BuildUpdatedResult(const std::string& path) {
         FrontendPayloadKind::kText,
         FormatUpdatedPathMessage(path),
         "",
+        {},
         {},
         {}
     };
@@ -375,6 +457,7 @@ FrontendActionResult BuildDeletedEntryResult(const std::string& entry_path) {
         FormatDeletedEntryMessage(entry_path),
         "",
         {},
+        {},
         {}
     };
 }
@@ -385,6 +468,7 @@ FrontendActionResult BuildQuitResult() {
         FrontendPayloadKind::kNone,
         "",
         "",
+        {},
         {},
         {}
     };
@@ -413,6 +497,10 @@ FrontendError ClassifyFrontendError(std::string_view message) {
 
     if (message == "vault is locked") {
         return FrontendError{FrontendErrorKind::kLocked, std::string(message)};
+    }
+
+    if (message == "no entry selected") {
+        return FrontendError{FrontendErrorKind::kSelection, std::string(message)};
     }
 
     if (message == "entry overwrite cancelled" ||
@@ -483,6 +571,10 @@ std::string RenderFrontendActionResult(const FrontendActionResult& result) {
         }
 
         return JoinLines(result.entry_names);
+    }
+
+    if (result.payload_kind == FrontendPayloadKind::kFocusedList) {
+        return RenderFocusedList(result.focused_list, result.empty_message);
     }
 
     throw std::runtime_error("unsupported frontend payload kind");

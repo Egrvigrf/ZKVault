@@ -88,6 +88,9 @@ NEW_PASSWORD_OUTPUT="$(run_ok $'new-master-password\n\n   \nhelp\nquit\n' shell)
 assert_contains "$NEW_PASSWORD_OUTPUT" "shell ready; type help for commands"
 assert_contains "$NEW_PASSWORD_OUTPUT" "Commands:"
 assert_contains "$NEW_PASSWORD_OUTPUT" "find <term>"
+assert_contains "$NEW_PASSWORD_OUTPUT" "next"
+assert_contains "$NEW_PASSWORD_OUTPUT" "prev"
+assert_contains "$NEW_PASSWORD_OUTPUT" "show [name]"
 assert_contains "$NEW_PASSWORD_OUTPUT" "lock"
 assert_contains "$NEW_PASSWORD_OUTPUT" "unlock"
 
@@ -107,7 +110,14 @@ SHELL_REPEAT_CONFIRMATION_OUTPUT="$(run_ok $'new-master-password\nupdate email\n
 assert_occurrences "$SHELL_REPEAT_CONFIRMATION_OUTPUT" "error: entry overwrite cancelled" 2
 assert_contains "$SHELL_REPEAT_CONFIRMATION_OUTPUT" '"password": "recovery-password"'
 
-SHELL_FIND_OUTPUT="$(run_ok $'new-master-password\nfind MAIL\nfind bank\nquit\n' shell)"
+SHELL_BROWSE_OUTPUT="$(run_ok $'new-master-password\nadd bank\nbank-password\nbank note\nlist\nnext\nshow\nprev\nshow\nfind em\nshow\nquit\n' shell)"
+assert_contains "$SHELL_BROWSE_OUTPUT" "saved to data/bank.zkv"
+assert_contains "$SHELL_BROWSE_OUTPUT" "> bank"
+assert_contains "$SHELL_BROWSE_OUTPUT" "> email"
+assert_contains "$SHELL_BROWSE_OUTPUT" '"password": "recovery-password"'
+assert_contains "$SHELL_BROWSE_OUTPUT" '"password": "bank-password"'
+
+SHELL_FIND_OUTPUT="$(run_ok $'new-master-password\nfind MAIL\nfind zx\nquit\n' shell)"
 assert_contains "$SHELL_FIND_OUTPUT" "email"
 assert_contains "$SHELL_FIND_OUTPUT" "(no matches)"
 
@@ -116,6 +126,11 @@ assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "vault locked"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "error: vault is locked"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "vault unlocked"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" '"password": "recovery-password"'
+
+SHELL_SELECTION_RESET_OUTPUT="$(run_ok $'new-master-password\nlist\nlock\nunlock\nnew-master-password\nshow\nquit\n' shell)"
+assert_contains "$SHELL_SELECTION_RESET_OUTPUT" "vault locked"
+assert_contains "$SHELL_SELECTION_RESET_OUTPUT" "vault unlocked"
+assert_contains "$SHELL_SELECTION_RESET_OUTPUT" "error: no entry selected"
 
 SHELL_LOCK_STATE_CONFLICT_OUTPUT="$(run_ok $'new-master-password\nlock\nlock\nunlock\nnew-master-password\nunlock\nquit\n' shell)"
 assert_contains "$SHELL_LOCK_STATE_CONFLICT_OUTPUT" "vault locked"

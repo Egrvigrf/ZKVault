@@ -41,15 +41,17 @@ void TestCliUsageCommands() {
 
 void TestShellHelpCommands() {
     const auto& commands = ShellHelpCommands();
-    Require(commands.size() == 11, "shell help should expose 11 commands");
+    Require(commands.size() == 13, "shell help should expose 13 commands");
     Require(commands[0] == "help", "shell help should include help");
     Require(commands[2] == "find <term>", "shell help should include find");
-    Require(commands[3] == "show <name>", "shell help should include show");
-    Require(commands[7] == "change-master-password",
+    Require(commands[3] == "next", "shell help should include next");
+    Require(commands[4] == "prev", "shell help should include prev");
+    Require(commands[5] == "show [name]", "shell help should include show");
+    Require(commands[9] == "change-master-password",
             "shell help should include rotation");
-    Require(commands[8] == "lock", "shell help should include lock");
-    Require(commands[9] == "unlock", "shell help should include unlock");
-    Require(commands[10] == "quit", "shell help should include quit");
+    Require(commands[10] == "lock", "shell help should include lock");
+    Require(commands[11] == "unlock", "shell help should include unlock");
+    Require(commands[12] == "quit", "shell help should include quit");
 }
 
 void TestShellCommandParsing() {
@@ -57,6 +59,20 @@ void TestShellCommandParsing() {
     Require(find.kind == FrontendCommandKind::kFind,
             "find command should parse as find");
     Require(find.name == "MAIL", "find command should preserve search term");
+
+    const FrontendCommand next = ParseShellCommand("next");
+    Require(next.kind == FrontendCommandKind::kNext,
+            "next command should parse as next");
+
+    const FrontendCommand prev = ParseShellCommand(" prev ");
+    Require(prev.kind == FrontendCommandKind::kPrev,
+            "prev command should parse as prev");
+
+    const FrontendCommand show_selected = ParseShellCommand("show");
+    Require(show_selected.kind == FrontendCommandKind::kShow,
+            "bare show should parse as show");
+    Require(show_selected.name.empty(),
+            "bare show should leave entry name empty");
 
     const FrontendCommand show = ParseShellCommand("show email");
     Require(show.kind == FrontendCommandKind::kShow,
@@ -86,6 +102,9 @@ void TestShellCommandParsing() {
     RequireThrows(
         [] { static_cast<void>(ParseShellCommand("list extra")); },
         "usage: list");
+    RequireThrows(
+        [] { static_cast<void>(ParseShellCommand("show email extra")); },
+        "usage: show [name]");
     RequireThrows(
         [] { static_cast<void>(ParseShellCommand("unknown")); },
         "unknown shell command");
@@ -145,6 +164,12 @@ void TestSessionStateMapping() {
     Require(ResolveCommandInputState(FrontendCommandKind::kFind) ==
                 FrontendSessionState::kShowingList,
             "find should reuse list state");
+    Require(ResolveCommandInputState(FrontendCommandKind::kNext) ==
+                FrontendSessionState::kShowingList,
+            "next should stay in list state");
+    Require(ResolveCommandInputState(FrontendCommandKind::kPrev) ==
+                FrontendSessionState::kShowingList,
+            "prev should stay in list state");
     Require(ResolveCommandInputState(FrontendCommandKind::kAdd) ==
                 FrontendSessionState::kEditingEntryForm,
             "add should enter editing state");
@@ -218,12 +243,15 @@ void TestActionResultsAndRendering() {
             "shell help should map to help state");
     Require(RenderFrontendActionResult(shell_help).find("Commands:") == 0,
             "shell help should render commands header");
-    Require(RenderFrontendActionResult(shell_help).find("show <name>") !=
+    Require(RenderFrontendActionResult(shell_help).find("show [name]") !=
                 std::string::npos,
             "shell help should render show command");
     Require(RenderFrontendActionResult(shell_help).find("find <term>") !=
                 std::string::npos,
             "shell help should render find command");
+    Require(RenderFrontendActionResult(shell_help).find("next") !=
+                std::string::npos,
+            "shell help should render next command");
     Require(RenderFrontendActionResult(shell_help).find("unlock") !=
                 std::string::npos,
             "shell help should render unlock command");
@@ -253,6 +281,31 @@ void TestActionResultsAndRendering() {
         BuildListResult(std::vector<std::string>{}, "(empty)");
     Require(RenderFrontendActionResult(empty_list) == "(empty)",
             "empty list should render explicit placeholder");
+
+    const FrontendActionResult focused_list = BuildFocusedListResult(
+        std::vector<std::string>{"bank", "email"},
+        "email",
+        "mail",
+        "(no matches)");
+    Require(focused_list.state == FrontendSessionState::kShowingList,
+            "focused list should map to list state");
+    Require(focused_list.payload_kind == FrontendPayloadKind::kFocusedList,
+            "focused list should expose focused list payload");
+    Require(focused_list.focused_list.filter_term == "mail",
+            "focused list should preserve filter term");
+    Require(focused_list.focused_list.selected_name == "email",
+            "focused list should preserve selected name");
+    Require(RenderFrontendActionResult(focused_list) ==
+                "  bank\n> email",
+            "focused list should render selection marker");
+
+    const FrontendActionResult empty_focused_list = BuildFocusedListResult(
+        std::vector<std::string>{},
+        "",
+        "mail",
+        "(no matches)");
+    Require(RenderFrontendActionResult(empty_focused_list) == "(no matches)",
+            "empty focused list should render explicit empty state");
 
     const FrontendActionResult shown_entry = BuildShowEntryResult(PasswordEntry{
         "email",
@@ -314,6 +367,9 @@ void TestErrorClassification() {
     Require(ClassifyFrontendError("vault is locked").kind ==
                 FrontendErrorKind::kLocked,
             "locked errors should be classified");
+    Require(ClassifyFrontendError("no entry selected").kind ==
+                FrontendErrorKind::kSelection,
+            "selection errors should be classified");
     Require(ClassifyFrontendError("entry overwrite cancelled").kind ==
                 FrontendErrorKind::kConfirmationRejected,
             "confirmation errors should be classified");
