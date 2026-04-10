@@ -14,6 +14,7 @@
 #include "app/vault_session.hpp"
 #include "crypto/secure_memory.hpp"
 #include "model/password_entry.hpp"
+#include "terminal/display.hpp"
 #include "terminal/prompt.hpp"
 
 namespace {
@@ -276,6 +277,7 @@ FrontendActionResult ExecuteShellCommand(
 
         session.reset();
         ResetBrowseState(browse_state);
+        ClearTerminalScreenIfInteractive();
         return BuildLockedResult();
     }
 

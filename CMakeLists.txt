@@ -33,6 +33,7 @@ target_link_libraries(zkvault_core PUBLIC OpenSSL::Crypto)
 add_executable(zkvault
     src/main.cpp
     src/shell/interactive_shell.cpp
+    src/terminal/display.cpp
     src/terminal/prompt.cpp
 )
 
@@ -48,6 +49,11 @@ if(BUILD_TESTING)
         src/terminal/prompt.cpp
     )
 
+    add_executable(zkvault_terminal_display
+        tests/terminal_display_test.cpp
+        src/terminal/display.cpp
+    )
+
     add_executable(zkvault_frontend_contract
         tests/frontend_contract_test.cpp
     )
@@ -55,6 +61,10 @@ if(BUILD_TESTING)
     target_link_libraries(zkvault_app_contract PRIVATE zkvault_core)
     target_link_libraries(zkvault_frontend_contract PRIVATE zkvault_core)
     target_link_libraries(zkvault_prompt_backspace PRIVATE zkvault_core util)
+    target_link_libraries(zkvault_terminal_display PRIVATE util)
+    target_include_directories(zkvault_terminal_display PRIVATE
+        src
+    )
 
     add_test(
         NAME zkvault_cli_smoke
@@ -75,6 +85,10 @@ if(BUILD_TESTING)
     add_test(
         NAME zkvault_prompt_backspace
         COMMAND $<TARGET_FILE:zkvault_prompt_backspace>
+    )
+    add_test(
+        NAME zkvault_terminal_display
+        COMMAND $<TARGET_FILE:zkvault_terminal_display>
     )
     add_test(
         NAME zkvault_frontend_contract
