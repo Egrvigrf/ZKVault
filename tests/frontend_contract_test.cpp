@@ -265,14 +265,29 @@ void TestExplicitStateMachineTransitions() {
             "view states should recover through failure state");
     Require(ResolveStateTransition(
                 FrontendSessionState::kRecoveringFromFailure,
-                FrontendStateEvent::kRecoveryCompletedWhileUnlocked) ==
+                FrontendStateEvent::kRecoveryCompletedToReady) ==
                 FrontendSessionState::kReady,
             "recovery should return to ready when session remains unlocked");
     Require(ResolveStateTransition(
                 FrontendSessionState::kRecoveringFromFailure,
-                FrontendStateEvent::kRecoveryCompletedWhileLocked) ==
+                FrontendStateEvent::kRecoveryCompletedToLocked) ==
                 FrontendSessionState::kLocked,
             "recovery should return to locked when session is absent");
+    Require(ResolveStateTransition(
+                FrontendSessionState::kRecoveringFromFailure,
+                FrontendStateEvent::kRecoveryCompletedToHelp) ==
+                FrontendSessionState::kShowingHelp,
+            "recovery should be able to restore help view");
+    Require(ResolveStateTransition(
+                FrontendSessionState::kRecoveringFromFailure,
+                FrontendStateEvent::kRecoveryCompletedToList) ==
+                FrontendSessionState::kShowingList,
+            "recovery should be able to restore list view");
+    Require(ResolveStateTransition(
+                FrontendSessionState::kRecoveringFromFailure,
+                FrontendStateEvent::kRecoveryCompletedToEntry) ==
+                FrontendSessionState::kShowingEntry,
+            "recovery should be able to restore entry view");
 
     RequireThrows(
         [] {
@@ -302,17 +317,37 @@ void TestFrontendStateMachine() {
                 FrontendSessionState::kReady,
             "failure handler should recover to ready when session remains open");
 
+    state_machine.SetState(FrontendSessionState::kShowingList);
+    Require(state_machine.HandleCommand(FrontendCommandKind::kUpdate) ==
+                FrontendSessionState::kConfirmingEntryOverwrite,
+            "list view should still enter overwrite confirmation");
+    Require(state_machine.HandleFailure(true) ==
+                FrontendSessionState::kShowingList,
+            "failure handler should restore the last list view");
+
     state_machine.SetState(FrontendSessionState::kShowingHelp);
     Require(state_machine.HandleCommand(FrontendCommandKind::kUnlock) ==
                 FrontendSessionState::kUnlockingSession,
             "state machine should reuse shared transition table for unlock");
+    Require(state_machine.HandleFailure(false) ==
+                FrontendSessionState::kShowingHelp,
+            "failed unlock from help should restore help view");
+
+    state_machine.SetState(FrontendSessionState::kShowingEntry);
+    Require(state_machine.HandleCommand(FrontendCommandKind::kUpdate) ==
+                FrontendSessionState::kConfirmingEntryOverwrite,
+            "entry view should still enter overwrite confirmation");
+    Require(state_machine.HandleFailure(true) ==
+                FrontendSessionState::kShowingEntry,
+            "failure handler should restore the last entry view");
+
     state_machine.SetState(FrontendSessionState::kShowingEntry);
     Require(state_machine.HandleIdleTimeout() ==
                 FrontendSessionState::kLocked,
             "state machine should support idle-lock transitions");
     Require(state_machine.HandleFailure(false) ==
                 FrontendSessionState::kLocked,
-            "failure handler should recover to locked when session is absent");
+            "failure handler should recover to locked when the last stable view requires an unlocked session");
 
     const FrontendActionResult quit = BuildQuitResult();
     Require(state_machine.ApplyActionResult(quit) ==

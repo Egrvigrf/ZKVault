@@ -100,6 +100,63 @@ std::string RenderFocusedList(
     return output.str();
 }
 
+bool IsStableFrontendState(FrontendSessionState state) {
+    return state == FrontendSessionState::kLocked ||
+           state == FrontendSessionState::kReady ||
+           state == FrontendSessionState::kShowingHelp ||
+           state == FrontendSessionState::kShowingList ||
+           state == FrontendSessionState::kShowingEntry;
+}
+
+bool CanPersistWithoutUnlockedSession(FrontendSessionState state) {
+    return state == FrontendSessionState::kLocked ||
+           state == FrontendSessionState::kShowingHelp;
+}
+
+FrontendStateEvent ResolveRecoveryCompletedEvent(
+    FrontendSessionState state) {
+    if (state == FrontendSessionState::kReady) {
+        return FrontendStateEvent::kRecoveryCompletedToReady;
+    }
+
+    if (state == FrontendSessionState::kLocked) {
+        return FrontendStateEvent::kRecoveryCompletedToLocked;
+    }
+
+    if (state == FrontendSessionState::kShowingHelp) {
+        return FrontendStateEvent::kRecoveryCompletedToHelp;
+    }
+
+    if (state == FrontendSessionState::kShowingList) {
+        return FrontendStateEvent::kRecoveryCompletedToList;
+    }
+
+    if (state == FrontendSessionState::kShowingEntry) {
+        return FrontendStateEvent::kRecoveryCompletedToEntry;
+    }
+
+    throw std::runtime_error("unsupported frontend recovery target");
+}
+
+FrontendSessionState ResolveFailureRecoveryTarget(
+    FrontendSessionState last_stable_state,
+    bool session_unlocked) {
+    if (!IsStableFrontendState(last_stable_state)) {
+        return session_unlocked ? FrontendSessionState::kReady
+                                : FrontendSessionState::kLocked;
+    }
+
+    if (session_unlocked) {
+        return last_stable_state;
+    }
+
+    if (CanPersistWithoutUnlockedSession(last_stable_state)) {
+        return last_stable_state;
+    }
+
+    return FrontendSessionState::kLocked;
+}
+
 }  // namespace
 
 const std::vector<std::string>& CliUsageCommands() {
@@ -349,13 +406,28 @@ const std::vector<FrontendStateTransition>& FrontendStateTransitions() {
             FrontendSessionState::kRecoveringFromFailure);
         transitions.push_back(FrontendStateTransition{
             FrontendSessionState::kRecoveringFromFailure,
-            FrontendStateEvent::kRecoveryCompletedWhileUnlocked,
+            FrontendStateEvent::kRecoveryCompletedToReady,
             FrontendSessionState::kReady
         });
         transitions.push_back(FrontendStateTransition{
             FrontendSessionState::kRecoveringFromFailure,
-            FrontendStateEvent::kRecoveryCompletedWhileLocked,
+            FrontendStateEvent::kRecoveryCompletedToLocked,
             FrontendSessionState::kLocked
+        });
+        transitions.push_back(FrontendStateTransition{
+            FrontendSessionState::kRecoveringFromFailure,
+            FrontendStateEvent::kRecoveryCompletedToHelp,
+            FrontendSessionState::kShowingHelp
+        });
+        transitions.push_back(FrontendStateTransition{
+            FrontendSessionState::kRecoveringFromFailure,
+            FrontendStateEvent::kRecoveryCompletedToList,
+            FrontendSessionState::kShowingList
+        });
+        transitions.push_back(FrontendStateTransition{
+            FrontendSessionState::kRecoveringFromFailure,
+            FrontendStateEvent::kRecoveryCompletedToEntry,
+            FrontendSessionState::kShowingEntry
         });
 
         return transitions;
@@ -439,7 +511,8 @@ FrontendSessionState ResolveStateTransition(
 
 FrontendStateMachine::FrontendStateMachine(
     FrontendSessionState initial_state) noexcept
-    : state_(initial_state) {}
+    : state_(initial_state),
+      last_stable_state_(initial_state) {}
 
 FrontendSessionState FrontendStateMachine::state() const noexcept {
     return state_;
@@ -447,6 +520,9 @@ FrontendSessionState FrontendStateMachine::state() const noexcept {
 
 void FrontendStateMachine::SetState(FrontendSessionState state) noexcept {
     state_ = state;
+    if (IsStableFrontendState(state_)) {
+        last_stable_state_ = state_;
+    }
 }
 
 FrontendSessionState FrontendStateMachine::ApplyEvent(FrontendStateEvent event) {
@@ -457,11 +533,19 @@ FrontendSessionState FrontendStateMachine::ApplyEvent(FrontendStateEvent event) 
 FrontendSessionState FrontendStateMachine::ApplyActionResult(
     const FrontendActionResult& result) noexcept {
     state_ = result.state;
+    if (IsStableFrontendState(state_)) {
+        last_stable_state_ = state_;
+    }
     return state_;
 }
 
 FrontendSessionState FrontendStateMachine::HandleStartup(bool vault_exists) {
-    return ApplyEvent(ResolveStartupEvent(vault_exists));
+    state_ = ResolveStateTransition(state_, ResolveStartupEvent(vault_exists));
+    if (IsStableFrontendState(state_)) {
+        last_stable_state_ = state_;
+    }
+
+    return state_;
 }
 
 FrontendSessionState FrontendStateMachine::HandleCommand(FrontendCommandKind kind) {
@@ -477,10 +561,10 @@ FrontendSessionState FrontendStateMachine::HandleConfirmationAccepted() {
 }
 
 FrontendSessionState FrontendStateMachine::HandleFailure(bool session_unlocked) {
+    const FrontendSessionState recovery_target =
+        ResolveFailureRecoveryTarget(last_stable_state_, session_unlocked);
     static_cast<void>(ApplyEvent(FrontendStateEvent::kOperationFailed));
-    return ApplyEvent(
-        session_unlocked ? FrontendStateEvent::kRecoveryCompletedWhileUnlocked
-                         : FrontendStateEvent::kRecoveryCompletedWhileLocked);
+    return ApplyEvent(ResolveRecoveryCompletedEvent(recovery_target));
 }
 
 FrontendSessionState ResolveStartupState(bool vault_exists) {

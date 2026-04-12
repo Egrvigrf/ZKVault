@@ -64,8 +64,11 @@ enum class FrontendStateEvent {
     kQuitRequested,
     kConfirmationAccepted,
     kOperationFailed,
-    kRecoveryCompletedWhileUnlocked,
-    kRecoveryCompletedWhileLocked
+    kRecoveryCompletedToReady,
+    kRecoveryCompletedToLocked,
+    kRecoveryCompletedToHelp,
+    kRecoveryCompletedToList,
+    kRecoveryCompletedToEntry
 };
 
 struct FrontendStateTransition {
@@ -103,6 +106,7 @@ public:
 
 private:
     FrontendSessionState state_;
+    FrontendSessionState last_stable_state_;
 };
 
 enum class FrontendPayloadKind {

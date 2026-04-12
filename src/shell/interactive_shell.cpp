@@ -89,9 +89,17 @@ struct ShellBrowseState {
     std::size_t selected_index = 0;
 };
 
+struct ShellViewContext {
+    std::string entry_name;
+};
+
 void Cleanse(ShellBrowseState& state) {
     ::Cleanse(state.filter_term);
     ::Cleanse(state.visible_entry_names);
+}
+
+void Cleanse(ShellViewContext& context) {
+    ::Cleanse(context.entry_name);
 }
 
 void ResetBrowseState(ShellBrowseState& state) {
@@ -237,10 +245,48 @@ FrontendActionResult BuildBrowseResult(const ShellBrowseState& state) {
         BrowseEmptyMessage(state));
 }
 
+void RememberShellViewContext(
+    const FrontendActionResult& result,
+    ShellViewContext& context) {
+    if (result.state == FrontendSessionState::kShowingEntry) {
+        ::Cleanse(context.entry_name);
+        context.entry_name = result.entry.name;
+        return;
+    }
+
+    ::Cleanse(context.entry_name);
+    context.entry_name.clear();
+}
+
+std::optional<FrontendActionResult> BuildRecoveredViewResult(
+    const std::optional<VaultSession>& session,
+    const ShellBrowseState& browse_state,
+    const ShellViewContext& view_context,
+    FrontendSessionState recovered_state) {
+    if (recovered_state == FrontendSessionState::kShowingHelp) {
+        return BuildShellHelpResult();
+    }
+
+    if (recovered_state == FrontendSessionState::kShowingList) {
+        return BuildBrowseResult(browse_state);
+    }
+
+    if (recovered_state != FrontendSessionState::kShowingEntry ||
+        !session.has_value() ||
+        view_context.entry_name.empty()) {
+        return std::nullopt;
+    }
+
+    PasswordEntry entry = session->LoadEntry(view_context.entry_name);
+    return BuildShowEntryResult(std::move(entry));
+}
+
 FrontendActionResult FinalizeShellResult(
     FrontendStateMachine& state_machine,
+    ShellViewContext& view_context,
     FrontendActionResult result) {
     static_cast<void>(state_machine.ApplyActionResult(result));
+    RememberShellViewContext(result, view_context);
     return result;
 }
 
@@ -277,16 +323,23 @@ PromptReadStatus ReadShellCommandLine(
 FrontendActionResult HandleIdleTimeout(
     std::optional<VaultSession>& session,
     FrontendStateMachine& state_machine,
-    ShellBrowseState& browse_state) {
+    ShellBrowseState& browse_state,
+    ShellViewContext& view_context) {
     if (!session.has_value()) {
-        return FinalizeShellResult(state_machine, BuildLockedResult());
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildLockedResult());
     }
 
     static_cast<void>(state_machine.HandleIdleTimeout());
     session.reset();
     ResetBrowseState(browse_state);
     ClearTerminalScreenIfInteractive();
-    return FinalizeShellResult(state_machine, BuildIdleLockedResult());
+    return FinalizeShellResult(
+        state_machine,
+        view_context,
+        BuildIdleLockedResult());
 }
 
 VaultSession OpenOrInitializeSession(FrontendStateMachine& state_machine) {
@@ -324,11 +377,15 @@ FrontendActionResult ExecuteShellCommand(
     std::optional<VaultSession>& session,
     const FrontendCommand& command,
     FrontendStateMachine& state_machine,
-    ShellBrowseState& browse_state) {
+    ShellBrowseState& browse_state,
+    ShellViewContext& view_context) {
     static_cast<void>(state_machine.HandleCommand(command.kind));
 
     if (command.kind == FrontendCommandKind::kHelp) {
-        return FinalizeShellResult(state_machine, BuildShellHelpResult());
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildShellHelpResult());
     }
 
     if (command.kind == FrontendCommandKind::kLock) {
@@ -339,7 +396,10 @@ FrontendActionResult ExecuteShellCommand(
         session.reset();
         ResetBrowseState(browse_state);
         ClearTerminalScreenIfInteractive();
-        return FinalizeShellResult(state_machine, BuildLockedResult());
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildLockedResult());
     }
 
     if (command.kind == FrontendCommandKind::kUnlock) {
@@ -351,11 +411,17 @@ FrontendActionResult ExecuteShellCommand(
         auto master_password_guard = MakeScopedCleanse(master_password);
         session.emplace(VaultSession::Open(master_password));
         ResetBrowseState(browse_state);
-        return FinalizeShellResult(state_machine, BuildUnlockedResult());
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildUnlockedResult());
     }
 
     if (command.kind == FrontendCommandKind::kQuit) {
-        return FinalizeShellResult(state_machine, BuildQuitResult());
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildQuitResult());
     }
 
     if (!session.has_value()) {
@@ -366,22 +432,34 @@ FrontendActionResult ExecuteShellCommand(
 
     if (command.kind == FrontendCommandKind::kList) {
         ActivateBrowseState(active_session, browse_state, "");
-        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kFind) {
         ActivateBrowseState(active_session, browse_state, command.name);
-        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kNext) {
         StepBrowseSelection(active_session, browse_state, true);
-        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kPrev) {
         StepBrowseSelection(active_session, browse_state, false);
-        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
+        return FinalizeShellResult(
+            state_machine,
+            view_context,
+            BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kShow) {
@@ -400,6 +478,7 @@ FrontendActionResult ExecuteShellCommand(
         FocusBrowseEntry(active_session, browse_state, entry_name);
         return FinalizeShellResult(
             state_machine,
+            view_context,
             BuildShowEntryResult(std::move(entry)));
     }
 
@@ -417,6 +496,7 @@ FrontendActionResult ExecuteShellCommand(
         static_cast<void>(SelectBrowseEntry(browse_state, command.name));
         return FinalizeShellResult(
             state_machine,
+            view_context,
             BuildStoredEntryResult(result.entry_path));
     }
 
@@ -441,6 +521,7 @@ FrontendActionResult ExecuteShellCommand(
         static_cast<void>(SelectBrowseEntry(browse_state, command.name));
         return FinalizeShellResult(
             state_machine,
+            view_context,
             BuildUpdatedResult(result.entry_path));
     }
 
@@ -457,6 +538,7 @@ FrontendActionResult ExecuteShellCommand(
         RefreshBrowseState(active_session, browse_state);
         return FinalizeShellResult(
             state_machine,
+            view_context,
             BuildDeletedEntryResult(result.entry_path));
     }
 
@@ -478,6 +560,7 @@ FrontendActionResult ExecuteShellCommand(
         RefreshBrowseState(active_session, browse_state);
         return FinalizeShellResult(
             state_machine,
+            view_context,
             BuildUpdatedResult(result.master_key_path));
     }
 
@@ -490,6 +573,7 @@ int RunInteractiveShell() {
     FrontendStateMachine state_machine;
     std::optional<VaultSession> session = OpenOrInitializeSession(state_machine);
     ShellBrowseState browse_state;
+    ShellViewContext view_context;
     const std::optional<std::chrono::milliseconds> idle_timeout =
         ReadShellIdleTimeout();
     PrintFrontendResult(BuildShellReadyResult());
@@ -502,7 +586,11 @@ int RunInteractiveShell() {
             Cleanse(line);
             line.clear();
             PrintFrontendResult(
-                HandleIdleTimeout(session, state_machine, browse_state));
+                HandleIdleTimeout(
+                    session,
+                    state_machine,
+                    browse_state,
+                    view_context));
             continue;
         }
 
@@ -518,7 +606,12 @@ int RunInteractiveShell() {
         try {
             const FrontendCommand command = ParseShellCommand(line);
             FrontendActionResult result =
-                ExecuteShellCommand(session, command, state_machine, browse_state);
+                ExecuteShellCommand(
+                    session,
+                    command,
+                    state_machine,
+                    browse_state,
+                    view_context);
             PrintFrontendResult(std::move(result));
             if (state_machine.state() == FrontendSessionState::kQuitRequested) {
                 return 0;
@@ -529,7 +622,23 @@ int RunInteractiveShell() {
             auto error_guard = MakeScopedCleanse(error);
             auto output_guard = MakeScopedCleanse(output);
             std::cout << output << '\n';
-            static_cast<void>(state_machine.HandleFailure(session.has_value()));
+            const FrontendSessionState recovered_state =
+                state_machine.HandleFailure(session.has_value());
+            try {
+                std::optional<FrontendActionResult> recovered_result =
+                    BuildRecoveredViewResult(
+                        session,
+                        browse_state,
+                        view_context,
+                        recovered_state);
+                if (recovered_result.has_value()) {
+                    PrintFrontendResult(FinalizeShellResult(
+                        state_machine,
+                        view_context,
+                        std::move(*recovered_result)));
+                }
+            } catch (const std::exception&) {
+            }
         }
     }
 }

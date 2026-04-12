@@ -121,11 +121,24 @@ SHELL_FIND_OUTPUT="$(run_ok $'new-master-password\nfind MAIL\nfind zx\nquit\n' s
 assert_contains "$SHELL_FIND_OUTPUT" "email"
 assert_contains "$SHELL_FIND_OUTPUT" "(no matches)"
 
+SHELL_LIST_VIEW_RECOVERY_OUTPUT="$(run_ok $'new-master-password\nfind em\nupdate email\nwrong-name\nquit\n' shell)"
+assert_contains "$SHELL_LIST_VIEW_RECOVERY_OUTPUT" "error: entry overwrite cancelled"
+assert_occurrences "$SHELL_LIST_VIEW_RECOVERY_OUTPUT" "> email" 2
+
+SHELL_ENTRY_VIEW_RECOVERY_OUTPUT="$(run_ok $'new-master-password\nshow email\nupdate email\nwrong-name\nquit\n' shell)"
+assert_contains "$SHELL_ENTRY_VIEW_RECOVERY_OUTPUT" "error: entry overwrite cancelled"
+assert_occurrences "$SHELL_ENTRY_VIEW_RECOVERY_OUTPUT" '"password": "recovery-password"' 2
+
 SHELL_LOCK_UNLOCK_OUTPUT="$(run_ok $'new-master-password\nlock\nshow email\nunlock\nnew-master-password\nshow email\nquit\n' shell)"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "vault locked"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "error: vault is locked"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "vault unlocked"
 assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" '"password": "recovery-password"'
+
+SHELL_HELP_VIEW_RECOVERY_OUTPUT="$(run_ok $'new-master-password\nlock\nhelp\nunlock\nwrong-password\nquit\n' shell)"
+assert_contains "$SHELL_HELP_VIEW_RECOVERY_OUTPUT" "vault locked"
+assert_contains "$SHELL_HELP_VIEW_RECOVERY_OUTPUT" "error: AES-256-GCM decryption failed"
+assert_occurrences "$SHELL_HELP_VIEW_RECOVERY_OUTPUT" "Commands:" 2
 
 SHELL_SELECTION_RESET_OUTPUT="$(run_ok $'new-master-password\nlist\nlock\nunlock\nnew-master-password\nshow\nquit\n' shell)"
 assert_contains "$SHELL_SELECTION_RESET_OUTPUT" "vault locked"
