@@ -389,9 +389,8 @@ FrontendActionResult ExecutePreparedShellCommand(
         throw std::runtime_error("vault is locked");
     }
 
-    VaultSession& active_session = *runtime.session;
-
     if (command.kind == FrontendCommandKind::kList) {
+        VaultSession& active_session = *runtime.session;
         ActivateBrowseState(active_session, runtime.browse_state, "");
         return FinalizeShellResult(
             runtime.state_machine,
@@ -400,6 +399,7 @@ FrontendActionResult ExecutePreparedShellCommand(
     }
 
     if (command.kind == FrontendCommandKind::kFind) {
+        VaultSession& active_session = *runtime.session;
         ActivateBrowseState(active_session, runtime.browse_state, command.name);
         return FinalizeShellResult(
             runtime.state_machine,
@@ -408,6 +408,7 @@ FrontendActionResult ExecutePreparedShellCommand(
     }
 
     if (command.kind == FrontendCommandKind::kNext) {
+        VaultSession& active_session = *runtime.session;
         StepBrowseSelection(active_session, runtime.browse_state, true);
         return FinalizeShellResult(
             runtime.state_machine,
@@ -416,6 +417,7 @@ FrontendActionResult ExecutePreparedShellCommand(
     }
 
     if (command.kind == FrontendCommandKind::kPrev) {
+        VaultSession& active_session = *runtime.session;
         StepBrowseSelection(active_session, runtime.browse_state, false);
         return FinalizeShellResult(
             runtime.state_machine,
@@ -424,6 +426,7 @@ FrontendActionResult ExecutePreparedShellCommand(
     }
 
     if (command.kind == FrontendCommandKind::kShow) {
+        VaultSession& active_session = *runtime.session;
         const std::string entry_name = command.name.empty()
                                            ? (HasBrowseSelection(runtime.browse_state)
                                                   ? SelectedBrowseEntryName(
@@ -444,23 +447,16 @@ FrontendActionResult ExecutePreparedShellCommand(
     }
 
     if (command.kind == FrontendCommandKind::kAdd) {
-        StorePasswordEntryRequest request{
+        std::string password = ReadSecret("Entry password: ");
+        auto password_guard = MakeScopedCleanse(password);
+        std::string note = ReadLine("Note: ");
+        auto note_guard = MakeScopedCleanse(note);
+        return StoreShellEntryWithContent(
+            runtime,
             EntryMutationMode::kCreate,
             command.name,
-            "",
-            ReadSecret("Entry password: "),
-            ReadLine("Note: ")
-        };
-        auto request_guard = MakeScopedCleanse(request);
-        const StorePasswordEntryResult result = active_session.StoreEntry(request);
-        SyncBrowseStateAfterMutation(
-            active_session,
-            runtime.browse_state,
-            command.name);
-        return FinalizeShellResult(
-            runtime.state_machine,
-            runtime.view_context,
-            BuildStoredEntryResult(result.entry_path));
+            password,
+            note);
     }
 
     if (command.kind == FrontendCommandKind::kUpdate) {
@@ -471,23 +467,16 @@ FrontendActionResult ExecutePreparedShellCommand(
             rule.expected_value,
             rule.mismatch_error);
         static_cast<void>(runtime.state_machine.HandleConfirmationAccepted());
-        StorePasswordEntryRequest request{
+        std::string password = ReadSecret("Entry password: ");
+        auto password_guard = MakeScopedCleanse(password);
+        std::string note = ReadLine("Note: ");
+        auto note_guard = MakeScopedCleanse(note);
+        return StoreShellEntryWithContent(
+            runtime,
             EntryMutationMode::kUpdate,
             command.name,
-            "",
-            ReadSecret("Entry password: "),
-            ReadLine("Note: ")
-        };
-        auto request_guard = MakeScopedCleanse(request);
-        const StorePasswordEntryResult result = active_session.StoreEntry(request);
-        SyncBrowseStateAfterMutation(
-            active_session,
-            runtime.browse_state,
-            command.name);
-        return FinalizeShellResult(
-            runtime.state_machine,
-            runtime.view_context,
-            BuildUpdatedResult(result.entry_path));
+            password,
+            note);
     }
 
     if (command.kind == FrontendCommandKind::kDelete) {
@@ -498,16 +487,11 @@ FrontendActionResult ExecutePreparedShellCommand(
             rule.expected_value,
             rule.mismatch_error);
         static_cast<void>(runtime.state_machine.HandleConfirmationAccepted());
-        const RemovePasswordEntryResult result =
-            active_session.RemoveEntry(command.name);
-        RefreshBrowseState(active_session, runtime.browse_state);
-        return FinalizeShellResult(
-            runtime.state_machine,
-            runtime.view_context,
-            BuildDeletedEntryResult(result.entry_path));
+        return RemoveShellEntryByName(runtime, command.name);
     }
 
     if (command.kind == FrontendCommandKind::kChangeMasterPassword) {
+        VaultSession& active_session = *runtime.session;
         const ExactConfirmationRule rule =
             BuildMasterPasswordRotationConfirmationRule();
         RequireExactConfirmation(
@@ -530,6 +514,55 @@ FrontendActionResult ExecutePreparedShellCommand(
     }
 
     throw std::runtime_error("unknown shell command");
+}
+
+FrontendActionResult StoreShellEntryWithContent(
+    ShellRuntimeState& runtime,
+    EntryMutationMode mode,
+    const std::string& entry_name,
+    const std::string& password,
+    const std::string& note) {
+    if (!runtime.session.has_value()) {
+        throw std::runtime_error("vault is locked");
+    }
+
+    VaultSession& active_session = *runtime.session;
+    StorePasswordEntryRequest request{
+        mode,
+        entry_name,
+        "",
+        password,
+        note
+    };
+    auto request_guard = MakeScopedCleanse(request);
+    const StorePasswordEntryResult result = active_session.StoreEntry(request);
+    SyncBrowseStateAfterMutation(
+        active_session,
+        runtime.browse_state,
+        entry_name);
+    return FinalizeShellResult(
+        runtime.state_machine,
+        runtime.view_context,
+        mode == EntryMutationMode::kCreate
+            ? BuildStoredEntryResult(result.entry_path)
+            : BuildUpdatedResult(result.entry_path));
+}
+
+FrontendActionResult RemoveShellEntryByName(
+    ShellRuntimeState& runtime,
+    const std::string& entry_name) {
+    if (!runtime.session.has_value()) {
+        throw std::runtime_error("vault is locked");
+    }
+
+    VaultSession& active_session = *runtime.session;
+    const RemovePasswordEntryResult result =
+        active_session.RemoveEntry(entry_name);
+    RefreshBrowseState(active_session, runtime.browse_state);
+    return FinalizeShellResult(
+        runtime.state_machine,
+        runtime.view_context,
+        BuildDeletedEntryResult(result.entry_path));
 }
 
 FrontendActionResult ShowCurrentShellBrowseView(

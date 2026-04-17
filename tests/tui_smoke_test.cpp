@@ -139,6 +139,10 @@ void ReadUntilContains(
                 continue;
             }
 
+            if (errno == EIO) {
+                break;
+            }
+
             throw std::runtime_error("failed to read tui output");
         }
 
@@ -161,98 +165,6 @@ std::filesystem::path MakeTempDirectory() {
     }
 
     return std::filesystem::path(created);
-}
-
-std::string RunCommandWithInput(
-    const char* binary_path,
-    const std::filesystem::path& workdir,
-    std::string_view input,
-    const std::vector<std::string>& arguments) {
-    int stdin_pipe[2] = {-1, -1};
-    int stdout_pipe[2] = {-1, -1};
-    if (::pipe(stdin_pipe) != 0 || ::pipe(stdout_pipe) != 0) {
-        throw std::runtime_error("failed to create command pipes");
-    }
-
-    ScopedFd stdin_read(stdin_pipe[0]);
-    ScopedFd stdin_write(stdin_pipe[1]);
-    ScopedFd stdout_read(stdout_pipe[0]);
-    ScopedFd stdout_write(stdout_pipe[1]);
-
-    const pid_t child_pid = ::fork();
-    if (child_pid < 0) {
-        throw std::runtime_error("failed to fork command child");
-    }
-
-    if (child_pid == 0) {
-        if (::chdir(workdir.c_str()) != 0) {
-            std::perror("chdir");
-            std::_Exit(1);
-        }
-
-        if (::dup2(stdin_read.Get(), STDIN_FILENO) != STDIN_FILENO ||
-            ::dup2(stdout_write.Get(), STDOUT_FILENO) != STDOUT_FILENO ||
-            ::dup2(stdout_write.Get(), STDERR_FILENO) != STDERR_FILENO) {
-            std::perror("dup2");
-            std::_Exit(1);
-        }
-
-        stdin_read.Reset();
-        stdin_write.Reset();
-        stdout_read.Reset();
-        stdout_write.Reset();
-
-        std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(binary_path));
-        for (const std::string& argument : arguments) {
-            argv.push_back(const_cast<char*>(argument.c_str()));
-        }
-        argv.push_back(nullptr);
-
-        ::execv(binary_path, argv.data());
-        std::perror("execv");
-        std::_Exit(1);
-    }
-
-    ScopedChildProcess child(child_pid);
-    stdin_read.Reset();
-    stdout_write.Reset();
-
-    WriteAll(stdin_write.Get(), input);
-    stdin_write.Reset();
-
-    std::string output;
-    std::array<char, 256> buffer{};
-    while (true) {
-        const ssize_t count =
-            ::read(stdout_read.Get(), buffer.data(), buffer.size());
-        if (count < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-
-            throw std::runtime_error("failed to read command output");
-        }
-
-        if (count == 0) {
-            break;
-        }
-
-        output.append(buffer.data(), static_cast<std::size_t>(count));
-    }
-
-    int status = 0;
-    if (::waitpid(child.Get(), &status, 0) != child.Get()) {
-        throw std::runtime_error("failed to wait for command child");
-    }
-    child.Release();
-
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        throw std::runtime_error(
-            "command exited unsuccessfully; captured output: " + output);
-    }
-
-    return output;
 }
 
 void TestTuiSmoke(const char* binary_path) {
@@ -358,17 +270,6 @@ void TestTuiSmoke(const char* binary_path) {
         Require(WEXITSTATUS(status) == 0, "tui child process should exit successfully");
     }
 
-    static_cast<void>(RunCommandWithInput(
-        binary_path,
-        temp_dir,
-        "test-master-password\nbank-password\nbank note\n",
-        {"add", "bank"}));
-    static_cast<void>(RunCommandWithInput(
-        binary_path,
-        temp_dir,
-        "test-master-password\nhunter2\nwork login\n",
-        {"add", "email"}));
-
     {
         int master_fd = -1;
         const pid_t child_pid = ::forkpty(&master_fd, nullptr, nullptr, nullptr);
@@ -410,6 +311,67 @@ void TestTuiSmoke(const char* binary_path) {
             output,
             cursor,
             "ready banner");
+
+        WriteAll(master.Get(), "a");
+        ReadUntilContains(
+            master.Get(),
+            "View: edit-entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "entry form view");
+        ReadUntilContains(
+            master.Get(),
+            "Create a new entry.",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "entry form heading");
+        ReadUntilContains(
+            master.Get(),
+            "> Name: ",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "entry form name field");
+        WriteAll(master.Get(), "bank\tbank-password\tbank note\r");
+        ReadUntilContains(
+            master.Get(),
+            "saved to data/bank.zkv",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "saved bank status");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "list view after saving bank");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> bank", list_state) != std::string::npos,
+                    "saving bank should return to browse with bank selected");
+        }
+
+        WriteAll(master.Get(), "a");
+        ReadUntilContains(
+            master.Get(),
+            "View: edit-entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "second entry form view");
+        WriteAll(master.Get(), "email\thunter2\twork login\r");
+        ReadUntilContains(
+            master.Get(),
+            "saved to data/email.zkv",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "saved email status");
         ReadUntilContains(
             master.Get(),
             "View: list",
@@ -417,19 +379,32 @@ void TestTuiSmoke(const char* binary_path) {
             output,
             cursor,
             "list view");
-        Require(output.find("> bank") != std::string::npos,
-                "tui should focus the first entry when browse view opens");
-        Require(output.find("  email") != std::string::npos,
-                "tui should render additional entries in browse view");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> email", list_state) != std::string::npos,
+                    "saving email should focus the newly created entry");
+            Require(output.find("  bank", list_state) != std::string::npos,
+                    "browse view should still render bank after adding email");
+        }
 
-        WriteAll(master.Get(), "\x1b[B");
+        WriteAll(master.Get(), "k");
+        ReadUntilContains(
+            master.Get(),
+            "> bank",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "selection after moving up to bank");
+
+        WriteAll(master.Get(), "j");
         ReadUntilContains(
             master.Get(),
             "> email",
             std::chrono::seconds(2),
             output,
             cursor,
-            "selection after moving down");
+            "selection after moving down to email");
 
         WriteAll(master.Get(), "\r");
         ReadUntilContains(
@@ -476,6 +451,20 @@ void TestTuiSmoke(const char* binary_path) {
             output,
             cursor,
             "help shortcut description");
+        ReadUntilContains(
+            master.Get(),
+            "a         create a new entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "help add shortcut");
+        ReadUntilContains(
+            master.Get(),
+            "d         delete the selected entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "help delete shortcut");
         const std::size_t help_state = output.rfind("Session: unlocked | State: help");
         Require(help_state != std::string::npos &&
                     output.find("> email", help_state) != std::string::npos,
@@ -499,14 +488,65 @@ void TestTuiSmoke(const char* binary_path) {
                 "captured output: " + output);
         }
 
-        WriteAll(master.Get(), "k");
+        WriteAll(master.Get(), "d");
         ReadUntilContains(
             master.Get(),
-            "> bank",
+            "View: confirm-delete",
             std::chrono::seconds(2),
             output,
             cursor,
-            "selection after moving up");
+            "delete confirmation view");
+        ReadUntilContains(
+            master.Get(),
+            "Delete entry: email",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "delete confirmation target");
+        WriteAll(master.Get(), "\x1b");
+        ReadUntilContains(
+            master.Get(),
+            "entry deletion cancelled",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "delete cancellation status");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> email", list_state) != std::string::npos,
+                    "cancelling delete should return to browse with email still selected");
+        }
+
+        WriteAll(master.Get(), "d");
+        ReadUntilContains(
+            master.Get(),
+            "View: confirm-delete",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "second delete confirmation view");
+        WriteAll(master.Get(), "email\r");
+        ReadUntilContains(
+            master.Get(),
+            "deleted data/email.zkv",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "deleted email status");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "list view after delete");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> bank", list_state) != std::string::npos,
+                    "deleting email should return to browse with bank selected");
+        }
 
         WriteAll(master.Get(), "l");
         ReadUntilContains(

@@ -81,6 +81,17 @@ FrontendActionResult ExecutePreparedShellCommand(
     ShellRuntimeState& runtime,
     const FrontendCommand& command);
 
+FrontendActionResult StoreShellEntryWithContent(
+    ShellRuntimeState& runtime,
+    EntryMutationMode mode,
+    const std::string& entry_name,
+    const std::string& password,
+    const std::string& note);
+
+FrontendActionResult RemoveShellEntryByName(
+    ShellRuntimeState& runtime,
+    const std::string& entry_name);
+
 FrontendActionResult ShowCurrentShellBrowseView(
     ShellRuntimeState& runtime);
 
