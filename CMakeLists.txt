@@ -144,11 +144,23 @@ if(BUILD_TESTING)
         tests/private_post_test.cpp
     )
 
+    add_executable(zkvault_private_post_fixture
+        tests/private_post_fixture_test.cpp
+    )
+
     target_link_libraries(zkvault_private_post PRIVATE zkvault_core)
+    target_link_libraries(zkvault_private_post_fixture PRIVATE zkvault_core)
+    target_compile_definitions(zkvault_private_post_fixture PRIVATE
+        ZKVAULT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
 
     add_test(
         NAME zkvault_private_post
         COMMAND $<TARGET_FILE:zkvault_private_post>
+    )
+    add_test(
+        NAME zkvault_private_post_fixture
+        COMMAND $<TARGET_FILE:zkvault_private_post_fixture>
     )
 
     if(ZKVAULT_BUILD_DEV_TOOLS)

@@ -12,6 +12,9 @@ ZKVault 的当前主线是“Markdown 私密文章分发的加密协议核心”
   - `src/storage/atomic_file.*`
 - `zkvault_terminal_support`
   - `src/terminal/prompt.*`
+- `fixtures/private-post/`
+  - 固定协议向量
+  - 跨语言兼容性对照样本
 - `zkvault`
   - `src/tools/private_post_cli.cpp`
 
@@ -19,6 +22,7 @@ ZKVault 的当前主线是“Markdown 私密文章分发的加密协议核心”
 
 - `core`：协议模型、版本校验、加解密、bundle 文件读写
 - `terminal_support`：开发工具所需的安全输入能力
+- `fixtures`：协议真源样本，供 Halo 等适配层做一致性验证
 - `zkvault`：协议验证、加密、解密预览等作者侧最小工具
 
 ## Layer Boundary
