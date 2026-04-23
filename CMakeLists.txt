@@ -36,6 +36,9 @@ add_executable(zkvault
     src/shell/shell_runtime.cpp
     src/terminal/display.cpp
     src/terminal/prompt.cpp
+    src/tui/terminal_ui_flow.cpp
+    src/tui/terminal_ui_input.cpp
+    src/tui/terminal_ui_render.cpp
     src/tui/terminal_ui.cpp
 )
 
