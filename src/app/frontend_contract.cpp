@@ -169,7 +169,9 @@ const std::vector<std::string>& CliUsageCommands() {
         "zkvault get <name>",
         "zkvault update <name>",
         "zkvault delete <name>",
-        "zkvault list"
+        "zkvault list",
+        "zkvault encrypt-post <document-path> <bundle-path>",
+        "zkvault decrypt-post-preview <bundle-path>"
     };
 
     return kCommands;

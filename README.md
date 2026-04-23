@@ -33,6 +33,8 @@ zkvault get <name>
 zkvault update <name>
 zkvault delete <name>
 zkvault list
+zkvault encrypt-post <document-path> <bundle-path>
+zkvault decrypt-post-preview <bundle-path>
 ```
 
 说明：
@@ -46,6 +48,22 @@ zkvault list
 - `update <name>`：更新条目
 - `delete <name>`：删除条目
 - `list`：列出条目标识
+- `encrypt-post <document-path> <bundle-path>`：将私密文章 JSON 文档加密为 bundle
+- `decrypt-post-preview <bundle-path>`：输入访问密码后本地预览解密后的文章 JSON
+
+私密文章文档当前采用 JSON 作为作者端输入格式：
+
+```json
+{
+  "metadata": {
+    "slug": "notes/private-post",
+    "title": "Private Post",
+    "excerpt": "Short preview",
+    "published_at": "2026-04-23T00:00:00Z"
+  },
+  "markdown": "# Private\nSecret content"
+}
+```
 
 ### 会话式 shell 原型
 
@@ -132,10 +150,14 @@ quit
 当前代码结构如下：
 
 ```text
+docs/              # 架构与演进说明
+integrations/      # 平台适配层占位，避免回灌到 native src/
 src/
 ├── app/      # 保险库动作、会话状态与前端契约
+├── content/  # 私密文章模型、访问密码加密 bundle 原型
 ├── crypto/   # 随机数、KDF、AES-GCM、hex 编解码
 ├── model/    # PasswordEntry、MasterKeyFile、EncryptedEntryFile
+├── service/  # 可复用本地 runtime，供 shell/TUI/Web API 共享
 ├── shell/    # 会话式终端原型与 runtime
 ├── storage/  # .zkv_master 和条目文件读写
 ├── terminal/ # 终端输入与显示抽象
@@ -146,10 +168,26 @@ src/
 建议分层如下：
 
 - `Vault Core`：密钥派生、数据加解密、文件存储、条目校验
+- `Content Layer`：私密文章模型、bundle 格式、访问密码加密
+- `Local Service Layer`：可复用 session/runtime、浏览状态、恢复逻辑
 - `Terminal Integration Layer`：命令封装、输入采集、错误映射、前端调用组织
 - `TUI Application Layer`：界面布局、焦点管理、快捷键、状态切换
 
-核心原则是：界面能力可以演进，但安全核心边界不应被界面实现反向侵入。
+核心原则是：界面能力可以演进，但安全核心边界不应被界面实现反向侵入；若后续接入 Web 前端，应优先复用 `service/` 与 `app/`，而不是直接复用终端输入输出层。
+
+当前构建目标也按这个边界拆分为：
+
+- `zkvault_core`：`app/`、`crypto/`、`storage/` 等本地核心
+- `zkvault_service`：可复用 runtime/service
+- `zkvault_terminal_frontends`：shell/TUI/terminal 交互层
+
+后续若扩展私密文章与 Halo 等平台适配，建议继续保持：
+
+- native 核心留在当前仓库
+- 平台适配放在 `integrations/` 或独立仓库
+
+详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 与
+[`integrations/halo/README.md`](integrations/halo/README.md)。
 
 ## 构建与运行
 

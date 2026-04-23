@@ -68,6 +68,18 @@ assert_contains "$INIT_OUTPUT" "initialized .zkv_master"
 [[ -f "$TMPDIR/.zkv_master" ]]
 [[ "$(stat -c '%a' "$TMPDIR/.zkv_master")" == "600" ]]
 
+cat > "$TMPDIR/private-post.json" <<'EOF'
+{
+  "metadata": {
+    "slug": "notes/private-post",
+    "title": "Private Post",
+    "excerpt": "Short preview",
+    "published_at": "2026-04-23T00:00:00Z"
+  },
+  "markdown": "# Private\nSecret content"
+}
+EOF
+
 ADD_OUTPUT="$(run_ok $'test-master-password\nentry-password\ninitial note\n' add email)"
 assert_contains "$ADD_OUTPUT" "saved to data/email.zkv"
 [[ -f "$TMPDIR/data/email.zkv" ]]
@@ -136,3 +148,13 @@ assert_contains "$DELETE_OUTPUT" "deleted data/email.zkv"
 
 LIST_AFTER_DELETE_OUTPUT="$(run_ok '' list)"
 assert_not_contains "$LIST_AFTER_DELETE_OUTPUT" "email"
+
+ENCRYPT_POST_OUTPUT="$(run_ok $'post-password\npost-password\n' encrypt-post private-post.json private-post.bundle.json)"
+assert_contains "$ENCRYPT_POST_OUTPUT" "encrypted private post saved to private-post.bundle.json"
+[[ -f "$TMPDIR/private-post.bundle.json" ]]
+[[ "$(stat -c '%a' "$TMPDIR/private-post.bundle.json")" == "600" ]]
+
+DECRYPT_POST_OUTPUT="$(run_ok $'post-password\n' decrypt-post-preview private-post.bundle.json)"
+assert_contains "$DECRYPT_POST_OUTPUT" '"slug": "notes/private-post"'
+assert_contains "$DECRYPT_POST_OUTPUT" '"title": "Private Post"'
+assert_contains "$DECRYPT_POST_OUTPUT" '"markdown": "# Private\nSecret content"'

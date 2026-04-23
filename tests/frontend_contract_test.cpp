@@ -31,13 +31,17 @@ void RequireThrows(
 
 void TestCliUsageCommands() {
     const auto& commands = CliUsageCommands();
-    Require(commands.size() == 9, "cli usage should expose 9 commands");
+    Require(commands.size() == 11, "cli usage should expose 11 commands");
     Require(commands[0] == "zkvault init", "cli usage should include init");
     Require(commands[1] == "zkvault shell", "cli usage should include shell");
     Require(commands[2] == "zkvault tui", "cli usage should include tui");
     Require(commands[3] == "zkvault change-master-password",
             "cli usage should include master password rotation");
     Require(commands[8] == "zkvault list", "cli usage should include list");
+    Require(commands[9] == "zkvault encrypt-post <document-path> <bundle-path>",
+            "cli usage should include encrypt-post");
+    Require(commands[10] == "zkvault decrypt-post-preview <bundle-path>",
+            "cli usage should include decrypt-post-preview");
 }
 
 void TestShellHelpCommands() {

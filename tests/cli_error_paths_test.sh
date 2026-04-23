@@ -95,3 +95,37 @@ cp "$ENTRY_BACKUP" "$ENTRY_PATH"
 sed 's/"version": 1/"version": 99/' "$ENTRY_BACKUP" > "$ENTRY_PATH"
 UNSUPPORTED_ENTRY_VERSION_OUTPUT="$(run_fail $'test-master-password\n' get email)"
 assert_contains "$UNSUPPORTED_ENTRY_VERSION_OUTPUT" "unsupported encrypted entry version"
+
+cat > "$TMPDIR/invalid-private-post.json" <<'EOF'
+{
+  "metadata": {
+    "slug": "",
+    "title": "Broken"
+  },
+  "markdown": "body"
+}
+EOF
+
+INVALID_PRIVATE_POST_OUTPUT="$(run_fail $'post-password\npost-password\n' encrypt-post invalid-private-post.json private-post.bundle.json)"
+assert_contains "$INVALID_PRIVATE_POST_OUTPUT" "private post slug must not be empty"
+
+cat > "$TMPDIR/private-post.json" <<'EOF'
+{
+  "metadata": {
+    "slug": "notes/private-post",
+    "title": "Private Post",
+    "excerpt": "Short preview",
+    "published_at": "2026-04-23T00:00:00Z"
+  },
+  "markdown": "# Private\nSecret content"
+}
+EOF
+
+run_ok $'post-password\npost-password\n' encrypt-post private-post.json private-post.bundle.json >/dev/null
+
+WRONG_POST_PASSWORD_OUTPUT="$(run_fail $'wrong-password\n' decrypt-post-preview private-post.bundle.json)"
+assert_contains "$WRONG_POST_PASSWORD_OUTPUT" "AES-256-GCM decryption failed"
+
+printf '{\n' > "$TMPDIR/private-post.bundle.json"
+INVALID_BUNDLE_JSON_OUTPUT="$(run_fail '' decrypt-post-preview private-post.bundle.json)"
+assert_contains "$INVALID_BUNDLE_JSON_OUTPUT" "invalid encrypted private post bundle JSON"

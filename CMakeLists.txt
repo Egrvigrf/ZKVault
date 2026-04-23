@@ -9,11 +9,13 @@ include(CTest)
 
 find_package(OpenSSL REQUIRED)
 
-add_library(zkvault_core
+set(ZKVAULT_CORE_SOURCES
     src/app/frontend_contract.cpp
     src/app/vault_app.cpp
     src/app/vault_codec.cpp
     src/app/vault_session.cpp
+    src/content/private_post.cpp
+    src/content/private_post_file.cpp
     src/crypto/aead.cpp
     src/crypto/hex.cpp
     src/crypto/kdf.cpp
@@ -23,15 +25,11 @@ add_library(zkvault_core
     src/storage/atomic_file.cpp
 )
 
-target_include_directories(zkvault_core PUBLIC
-    src
-    external
+set(ZKVAULT_SERVICE_SOURCES
+    src/service/vault_runtime.cpp
 )
 
-target_link_libraries(zkvault_core PUBLIC OpenSSL::Crypto)
-
-add_executable(zkvault
-    src/main.cpp
+set(ZKVAULT_TERMINAL_FRONTEND_SOURCES
     src/shell/interactive_shell.cpp
     src/shell/shell_runtime.cpp
     src/terminal/display.cpp
@@ -46,7 +44,38 @@ add_executable(zkvault
     src/tui/terminal_ui.cpp
 )
 
-target_link_libraries(zkvault PRIVATE zkvault_core)
+add_library(zkvault_core
+    ${ZKVAULT_CORE_SOURCES}
+)
+
+target_include_directories(zkvault_core PUBLIC
+    src
+    external
+)
+
+target_link_libraries(zkvault_core PUBLIC OpenSSL::Crypto)
+
+add_library(zkvault_service
+    ${ZKVAULT_SERVICE_SOURCES}
+)
+
+target_link_libraries(zkvault_service PUBLIC zkvault_core)
+
+add_library(zkvault_terminal_frontends
+    ${ZKVAULT_TERMINAL_FRONTEND_SOURCES}
+)
+
+target_include_directories(zkvault_terminal_frontends PUBLIC
+    src
+)
+
+target_link_libraries(zkvault_terminal_frontends PUBLIC zkvault_service)
+
+add_executable(zkvault
+    src/main.cpp
+)
+
+target_link_libraries(zkvault PRIVATE zkvault_core zkvault_terminal_frontends)
 
 if(BUILD_TESTING)
     add_executable(zkvault_app_contract
@@ -75,8 +104,13 @@ if(BUILD_TESTING)
         tests/frontend_contract_test.cpp
     )
 
+    add_executable(zkvault_private_post
+        tests/private_post_test.cpp
+    )
+
     target_link_libraries(zkvault_app_contract PRIVATE zkvault_core)
     target_link_libraries(zkvault_frontend_contract PRIVATE zkvault_core)
+    target_link_libraries(zkvault_private_post PRIVATE zkvault_core)
     target_link_libraries(zkvault_prompt_backspace PRIVATE zkvault_core util)
     target_link_libraries(zkvault_shell_idle_lock PRIVATE util)
     target_link_libraries(zkvault_tui_smoke PRIVATE util)
@@ -120,5 +154,9 @@ if(BUILD_TESTING)
     add_test(
         NAME zkvault_frontend_contract
         COMMAND $<TARGET_FILE:zkvault_frontend_contract>
+    )
+    add_test(
+        NAME zkvault_private_post
+        COMMAND $<TARGET_FILE:zkvault_private_post>
     )
 endif()
