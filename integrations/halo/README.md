@@ -1,37 +1,37 @@
 # Halo Integration
 
-This directory is a boundary marker for the future Halo adapter.
+这个目录只用于描述 Halo 适配边界，不承载协议核心实现。
 
-It exists to keep one rule explicit: Halo-specific product code should be
-treated as an integration layer, not folded back into the native vault runtime
-under `src/`.
+## Boundary
 
-## What Belongs Here
+应该留在 `ZKVault` 的内容：
 
-- Halo plugin packaging notes
-- article field mapping
-- locked-page rendering contracts
-- browser-side unlock flow notes
-- release and marketplace assets
+- `PrivatePostDocument` 数据模型
+- `EncryptedPrivatePostBundle` 协议
+- 加解密参考实现
+- 版本校验
+- fixture 与兼容性测试
+- 可选作者侧开发工具
 
-## What Does Not Belong Here
+应该留在 Halo 适配层的内容：
 
-- core encryption primitives
-- native vault session state
-- local secure storage logic
-- terminal interaction code
+- 编辑器侧写作体验
+- 保存前加密流程接入
+- 文章元数据映射
+- 锁定页渲染
+- 浏览器端解密与自动重新锁定
+- 一键安装和社区发布相关资产
 
-Those stay in the native codebase:
+## Delivery Constraint
 
-- `src/app/`
-- `src/crypto/`
-- `src/service/`
-- `src/storage/`
+如果目标是 Halo 社区可一键安装的插件，那么运行时不能依赖本地 `zkvault` 可执行文件、本地 sidecar 或作者机器上的额外服务。
 
-## Recommended Product Shape
+更合理的交付方式是：
 
-- `ZKVault` native runtime remains the author-side secure core.
-- `Halo` becomes the first distribution adapter for private posts.
-- If Halo marketplace submission is blocked, the same adapter can still be
-  distributed through GitHub Releases, forum posts, or other supported plugin
-  channels.
+- `ZKVault` 提供协议文档、fixture 和参考实现
+- Halo 插件把必要的协议能力打包进自身
+- 浏览器端负责访问密码输入、解密和渲染
+
+## Collaboration Rule
+
+Halo 适配层可以复用 ZKVault 的协议设计，但不应把平台特有页面、组件或管理逻辑放回这个仓库。

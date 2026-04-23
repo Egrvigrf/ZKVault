@@ -1,57 +1,36 @@
 # ZKVault
 
-ZKVault 是一个面向本地终端环境的安全保险库项目，当前以 CLI、会话式 shell 和 TUI 原型三种入口提供敏感数据管理能力。项目目标是沉淀一套可演进的终端保险库基础设施，而不是服务端系统、HTTP API 或多租户平台。
+ZKVault 现在收敛为一个面向 Markdown 私密文章分发的加密协议核心。
 
-## 项目概览
+它负责的主线能力只有这些：
 
-- 产品形态：本地终端安全保险库
-- 主要界面：CLI、会话式 shell、TUI 原型
-- 部署方式：单机本地运行
-- 技术栈：C++20、CMake、OpenSSL
-- 非目标：HTTP API、守护进程、多租户服务端架构
+- 私密文章数据模型
+- `EncryptedPrivatePostBundle` 协议
+- 加解密参考实现
+- 版本校验与兼容性边界
+- fixture 与兼容性测试基础
+- 可选的作者侧开发工具
 
-当前重点包括：
+它不是 Halo 上层产品本身，也不再把“本地终端保险库”作为仓库主线定位。
 
-- 主密码管理与密钥派生
-- 条目加密、解密与本地持久化
-- 终端安全输入与敏感信息隔离
-- 面向 shell/TUI 的前端契约与状态组织
+## 仓库边界
 
-## 已实现能力
+这个仓库当前的主线只关注协议核心，不负责：
 
-### CLI
+- Halo 编辑器交互
+- Halo 插件安装与分发
+- 浏览器端解密页面体验
+- 泛化的富文本或任意文件加密标准
+- 多租户服务端或 HTTP API
 
-`zkvault` 当前支持以下命令：
+与 Halo 的关系应当是：
 
-```text
-zkvault init
-zkvault shell
-zkvault tui
-zkvault change-master-password
-zkvault add <name>
-zkvault get <name>
-zkvault update <name>
-zkvault delete <name>
-zkvault list
-zkvault encrypt-post <document-path> <bundle-path>
-zkvault decrypt-post-preview <bundle-path>
-```
+- `ZKVault`：协议核心、参考实现、兼容性测试
+- `halo-private-posts`：Halo 适配层、编辑器集成、锁定页渲染、浏览器端解密
 
-说明：
+## 当前协议模型
 
-- `init`：初始化保险库并生成 `.zkv_master`
-- `shell`：启动一次解锁、多步操作的会话式终端原型
-- `tui`：启动当前的全屏终端界面原型
-- `change-master-password`：更新主密码并重新包裹 DEK
-- `add <name>`：创建条目
-- `get <name>`：读取条目
-- `update <name>`：更新条目
-- `delete <name>`：删除条目
-- `list`：列出条目标识
-- `encrypt-post <document-path> <bundle-path>`：将私密文章 JSON 文档加密为 bundle
-- `decrypt-post-preview <bundle-path>`：输入访问密码后本地预览解密后的文章 JSON
-
-私密文章文档当前采用 JSON 作为作者端输入格式：
+作者侧输入文档是 `PrivatePostDocument`：
 
 ```json
 {
@@ -65,131 +44,74 @@ zkvault decrypt-post-preview <bundle-path>
 }
 ```
 
-### 会话式 shell 原型
+分发侧输出是 `EncryptedPrivatePostBundle`：
 
-`zkvault shell` 用于验证未来 TUI 的核心交互模型，当前已支持：
-
-- 启动时自动检测保险库是否存在，不存在时可直接初始化
-- 一次解锁后连续执行 `list`、`find`、`next`、`prev`、`show`、`add`、`update`、`delete`
-- 在同一会话内执行主密码轮换
-- 在同一会话内显式 `lock` / `unlock`
-- 失败或取消后恢复最近一次稳定视图
-- 保持与 CLI 一致的高风险确认语义
-
-Shell 帮助命令如下：
-
-```text
-help
-list
-find <term>
-next
-prev
-show [name]
-add <name>
-update <name>
-delete <name>
-change-master-password
-lock
-unlock
-quit
+```json
+{
+  "version": 1,
+  "payload_format": "markdown",
+  "cipher": "aes-256-gcm",
+  "kdf": "scrypt",
+  "salt": "...",
+  "data_iv": "...",
+  "ciphertext": "...",
+  "auth_tag": "...",
+  "metadata": {
+    "slug": "notes/private-post",
+    "title": "Private Post",
+    "excerpt": "Short preview",
+    "published_at": "2026-04-23T00:00:00Z"
+  }
+}
 ```
 
-### TUI 原型
+当前 `v1` 的实现是“访问密码直接派生内容密钥后加密 Markdown 负载”。严格来说，这更接近口令型内容加密，而不是带独立 DEK 包裹字段的完整信封加密协议。后续若要引入 wrapped key，应通过版本升级完成。
 
-`zkvault tui` 在复用同一套前端契约与 shell runtime 的基础上，增加了备用屏幕和全屏重绘骨架，当前已覆盖：
-
-- 浏览区、状态区、视图区的基础布局
-- 帮助、列表、详情、筛选、锁定视图
-- 条目新增、更新表单
-- 条目删除与主密码轮换确认流程
-- 主密码轮换表单
-- 锁定、解锁、退出
-
-当前按键如下：
-
-- `Up` / `Down` 或 `j` / `k`：移动焦点
-- `Enter`：查看当前选中条目
-- `f` 或 `/`：筛选条目
-- `a`：新增条目
-- `e`：更新当前选中条目
-- `d`：删除当前选中条目
-- `m`：轮换主密码
-- `?`：打开帮助
-- `Esc`：返回浏览区或取消当前交互
-- `l`：锁定保险库
-- `u`：解锁保险库
-- `q`：退出 TUI
-
-说明：
-
-- TUI 当前已实现筛选、新增、更新、删除和主密码轮换
-
-## 安全与交互约束
-
-- 主密码始终通过终端交互输入，不通过命令行参数传递
-- 密码输入显示 `*` 掩码，并支持退格删除
-- 普通文本输入同样支持退格，不会回显 `^H` 或 `^?`
-- `shell` 会话在开始时解锁一次，后续可连续执行多步操作
-- `add` 仅允许创建新条目；若条目已存在则失败
-- `update` 仅允许更新已有条目；若条目不存在则失败
-- 条目名仅允许字母、数字、`.`、`-`、`_`
-- 条目名不允许为空、不允许为 `.` 或 `..`，也不允许包含路径分隔符、空格或其他特殊字符
-
-高风险操作需要显式确认：
-
-- 覆盖条目：再次输入目标条目名
-- 删除条目：再次输入目标条目名
-- 轮换主密码：输入 `CHANGE`
-
-若确认值不匹配，操作会立即失败，不会继续写入。
-
-若设置环境变量 `ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS=<正整数>`，`shell` 和已解锁状态下的 `tui` 会在空闲超时后自动锁定并清屏。
-
-## 架构说明
-
-当前代码结构如下：
+## 目录结构
 
 ```text
-docs/              # 架构与演进说明
-integrations/      # 平台适配层占位，避免回灌到 native src/
+docs/                 # 协议、架构、legacy 说明
+integrations/         # 平台适配边界说明，不放协议核心代码
 src/
-├── app/      # 保险库动作、会话状态与前端契约
-├── content/  # 私密文章模型、访问密码加密 bundle 原型
-├── crypto/   # 随机数、KDF、AES-GCM、hex 编解码
-├── model/    # PasswordEntry、MasterKeyFile、EncryptedEntryFile
-├── service/  # 可复用本地 runtime，供 shell/TUI/Web API 共享
-├── shell/    # 会话式终端原型与 runtime
-├── storage/  # .zkv_master 和条目文件读写
-├── terminal/ # 终端输入与显示抽象
-├── tui/      # 全屏 TUI 原型
-└── main.cpp  # CLI 入口与命令分发
+├── content/          # 私密文章模型、bundle 协议、文件读写
+├── crypto/           # 随机数、KDF、AES-GCM、hex 编解码
+├── storage/          # 当前仅保留协议所需的原子写文件支持
+├── terminal/         # 开发工具用的终端输入支持
+└── tools/            # 协议开发工具入口
+tests/                # 协议与工具测试
 ```
 
-建议分层如下：
+下面这些目录保留为历史探索资产，但不再代表仓库主线：
 
-- `Vault Core`：密钥派生、数据加解密、文件存储、条目校验
-- `Content Layer`：私密文章模型、bundle 格式、访问密码加密
-- `Local Service Layer`：可复用 session/runtime、浏览状态、恢复逻辑
-- `Terminal Integration Layer`：命令封装、输入采集、错误映射、前端调用组织
-- `TUI Application Layer`：界面布局、焦点管理、快捷键、状态切换
+- `src/app/`
+- `src/model/`
+- `src/service/`
+- `src/shell/`
+- `src/tui/`
+- `src/storage/json_storage.*`
+- `src/storage/master_key_storage.*`
 
-核心原则是：界面能力可以演进，但安全核心边界不应被界面实现反向侵入；若后续接入 Web 前端，应优先复用 `service/` 与 `app/`，而不是直接复用终端输入输出层。
+详见 [`docs/LEGACY.md`](docs/LEGACY.md)。
 
-当前构建目标也按这个边界拆分为：
+## 默认开发工具
 
-- `zkvault_core`：`app/`、`crypto/`、`storage/` 等本地核心
-- `zkvault_service`：可复用 runtime/service
-- `zkvault_terminal_frontends`：shell/TUI/terminal 交互层
+默认构建会生成一个最小协议工具 `zkvault`：
 
-后续若扩展私密文章与 Halo 等平台适配，建议继续保持：
+```text
+zkvault encrypt-post <document-path> <bundle-path>
+zkvault decrypt-post-preview <bundle-path>
+zkvault validate-document <document-path>
+zkvault validate-bundle <bundle-path>
+```
 
-- native 核心留在当前仓库
-- 平台适配放在 `integrations/` 或独立仓库
+这些命令用于：
 
-详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 与
-[`integrations/halo/README.md`](integrations/halo/README.md)。
+- 验证协议输入文档
+- 生成 bundle fixture
+- 本地预览解密结果
+- 做 Halo 适配前的协议联调
 
-## 构建与运行
+## 构建
 
 ### 环境要求
 
@@ -198,85 +120,27 @@ src/
 - 支持 C++20 的编译器
 - OpenSSL 开发库
 
-### 构建
+### 默认构建
 
 ```bash
 cmake -S . -B build
 cmake --build build
 ```
 
-### 快速开始
+### 启用 legacy 原型
 
-初始化保险库：
-
-```bash
-./build/zkvault init
-```
-
-列出条目：
+如果你还需要编译旧的本地保险库 CLI / shell / TUI 原型：
 
 ```bash
-./build/zkvault list
+cmake -S . -B build -DZKVAULT_BUILD_LEGACY=ON
+cmake --build build
 ```
 
-读取条目：
+启用后会额外生成 `zkvault-legacy`，用于保留历史探索能力，不作为当前产品主线。
 
-```bash
-./build/zkvault get <name>
-```
+## 文档
 
-启动会话式 shell：
-
-```bash
-./build/zkvault shell
-```
-
-启动 TUI 原型：
-
-```bash
-./build/zkvault tui
-```
-
-若直接执行：
-
-```bash
-./build/zkvault
-```
-
-当前行为是输出命令用法并等待子命令，不会自动进入 `shell` 或 `tui`。
-
-## 测试
-
-查看测试列表：
-
-```bash
-ctest --test-dir build -N
-```
-
-运行全部测试：
-
-```bash
-ctest --test-dir build
-```
-
-## 当前定位
-
-ZKVault 现在更适合被理解为“终端保险库交互模型与安全边界的实现工程”，而不是最终完成态产品。当前仓库已经把 CLI、会话式 shell 和 TUI 原型统一到了同一套动作语义、状态机和错误映射上，为后续继续演进 TUI 提供了稳定基础。
-
-## 长期目标
-
-在保持当前本地优先、终端优先架构的前提下，ZKVault 的长期目标可以扩展为支持云端部署能力，但该方向应建立在 zero-knowledge 安全模型之上，而不是把解密能力直接迁移到服务端。
-
-更具体地说，长期演进方向可以包括：
-
-- 提供可选的云端密文同步、备份与恢复能力
-- 支持多设备之间的保险库数据同步
-- 由客户端完成主密码处理、密钥派生与数据加解密
-- 服务端仅存储密文、必要元数据和同步状态，不持有可用于解密用户数据的主密钥或等价物
-
-若进入云端场景，安全边界应明确区分：
-
-- 传输层安全：通过 TLS 保护网络传输
-- 应用层 zero-knowledge：通过客户端加密确保服务端无法获取明文
-
-这意味着未来若增加云能力，目标应是“zero-knowledge 的云端密文存储与同步平台”，而不是“可在服务端直接解密和操作明文保险库的托管应用”。
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：当前主线架构
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md)：私密文章协议细节
+- [`docs/LEGACY.md`](docs/LEGACY.md)：旧 CLI/shell/TUI 原型的保留策略
+- [`integrations/halo/README.md`](integrations/halo/README.md)：Halo 适配边界
